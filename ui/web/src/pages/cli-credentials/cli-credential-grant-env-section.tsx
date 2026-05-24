@@ -6,13 +6,21 @@
  */
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, X, Eye } from "lucide-react";
+import { Plus, X, Eye, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/stores/use-toast-store";
 import { useHttp } from "@/hooks/use-ws";
+
+// Marker prefix for file-content env entries. Keep in sync with
+// internal/crypto/env_denylist.go FileEnvKeyPrefix. At exec time the backend
+// materializes the value to a temp file and rewrites the entry as
+// <NAME>=<temp path> so the child process sees a real file path.
+const FILE_ENV_PREFIX = "__FILE_";
+const isFileKey = (k: string) => k.startsWith(FILE_ENV_PREFIX) && k.length > FILE_ENV_PREFIX.length;
 
 // Keep in sync with internal/crypto/env_denylist.go.
 // Backend is authoritative; this list drives inline UX warnings only.
@@ -134,6 +142,10 @@ export function CliCredentialGrantEnvSection({
   }, [grantId, binaryId, http, onChange, entries, t]);
 
   const addEntry = useCallback(() => setEntries((p) => [...p, { key: "", value: "", masked: false }]), [setEntries]);
+  const addFileEntry = useCallback(
+    () => setEntries((p) => [...p, { key: FILE_ENV_PREFIX, value: "", masked: false }]),
+    [setEntries],
+  );
   const removeEntry = useCallback((i: number) => setEntries((p) => p.filter((_, j) => j !== i)), [setEntries]);
   const updateEntry = useCallback((i: number, f: "key" | "value", v: string) =>
     setEntries((p) => p.map((e, j) => j === i ? { ...e, [f]: v, masked: false } : e)), [setEntries]);
@@ -173,10 +185,12 @@ export function CliCredentialGrantEnvSection({
           )}
           {entries.map((entry, idx) => {
             const hasError = isDenied(entry.key) || isRejected(entry.key);
+            const fileMode = isFileKey(entry.key);
             return (
               <div key={idx} className="flex items-start gap-2">
                 <div className="flex-1">
-                  <Input placeholder={t("grants.envVars.keyPlaceholder")} value={entry.key}
+                  <Input placeholder={fileMode ? `${FILE_ENV_PREFIX}NAME` : t("grants.envVars.keyPlaceholder")}
+                    value={entry.key}
                     onChange={(e) => updateEntry(idx, "key", e.target.value)}
                     className={`text-base md:text-sm font-mono${hasError ? " border-destructive" : ""}`} />
                   {hasError && (
@@ -184,11 +198,21 @@ export function CliCredentialGrantEnvSection({
                       {t("grants.envVars.deniedKey", { key: entry.key })}
                     </p>
                   )}
+                  {fileMode && !hasError && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {t("grants.envVars.fileHelp", { name: entry.key.slice(FILE_ENV_PREFIX.length) || "NAME" })}
+                    </p>
+                  )}
                 </div>
                 <div className="flex-1">
                   {entry.masked ? (
                     <Input disabled value={t("grants.envVars.revealHidden")}
                       className="text-base md:text-sm text-muted-foreground italic" />
+                  ) : fileMode ? (
+                    <Textarea autoComplete="off" placeholder={t("grants.envVars.filePlaceholder")}
+                      value={entry.value} onChange={(e) => updateEntry(idx, "value", e.target.value)}
+                      rows={6}
+                      className="text-base md:text-sm font-mono resize-y" />
                   ) : (
                     <Input type="password" autoComplete="off" placeholder={t("grants.envVars.valuePlaceholder")}
                       value={entry.value} onChange={(e) => updateEntry(idx, "value", e.target.value)}
@@ -205,9 +229,14 @@ export function CliCredentialGrantEnvSection({
           {entries.length === 0 && (
             <p className="text-xs text-muted-foreground">{t("grants.envVars.emptyState")}</p>
           )}
-          <Button type="button" variant="outline" size="sm" onClick={addEntry} className="w-fit gap-1">
-            <Plus className="h-3.5 w-3.5" /> {t("grants.envVars.addKey")}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={addEntry} className="gap-1">
+              <Plus className="h-3.5 w-3.5" /> {t("grants.envVars.addKey")}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={addFileEntry} className="gap-1">
+              <FileText className="h-3.5 w-3.5" /> {t("grants.envVars.addFile")}
+            </Button>
+          </div>
         </div>
       )}
     </div>

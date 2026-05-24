@@ -65,6 +65,32 @@ const maxGrantEnvKeys = 50
 // maxGrantEnvValueBytes is the maximum byte length for a single env value.
 const maxGrantEnvValueBytes = 4096
 
+// maxGrantFileEnvValueBytes is the larger byte limit applied to keys with the
+// FileEnvKeyPrefix — file-content env vars (kubeconfigs, service-account JSON,
+// PEM bundles) routinely exceed the single-line env value limit.
+const maxGrantFileEnvValueBytes = 64 * 1024
+
+// FileEnvKeyPrefix marks an env entry whose value is file content, not a value.
+// Exec time materializes <content> to a per-exec temp file and rewrites the
+// envMap so <NAME without prefix> = <temp path> reaches the child process.
+// Values under this prefix are exempt from the newline restriction so users
+// can paste multi-line YAML/JSON/PEM directly.
+const FileEnvKeyPrefix = "__FILE_"
+
+// IsFileEnvKey reports whether key uses the FileEnvKeyPrefix convention.
+func IsFileEnvKey(key string) bool {
+	return strings.HasPrefix(key, FileEnvKeyPrefix) && len(key) > len(FileEnvKeyPrefix)
+}
+
+// FileEnvTargetName returns the target env var name for a file env key
+// (the part after FileEnvKeyPrefix), or "" if key isn't a file env key.
+func FileEnvTargetName(key string) string {
+	if !IsFileEnvKey(key) {
+		return ""
+	}
+	return key[len(FileEnvKeyPrefix):]
+}
+
 // IsDeniedEnvKey reports whether key is on the grant env denylist.
 // Comparison is case-insensitive.
 func IsDeniedEnvKey(key string) bool {
@@ -118,14 +144,36 @@ func ValidateGrantEnvVars(envVars map[string]string) (rejectedKeys []string, val
 		if IsDeniedEnvKey(k) {
 			denied = append(denied, k)
 		}
-		if err := validateGrantEnvValue(v); err != nil {
+		// For file env keys, also reject if the materialized target name is denylisted
+		// (e.g. `__FILE_PATH` would set PATH at exec time → escape vector).
+		if target := FileEnvTargetName(k); target != "" && IsDeniedEnvKey(target) {
+			denied = append(denied, k)
+		}
+		if err := validateGrantEnvValue(k, v); err != nil {
 			return nil, fmt.Errorf("key %q: %w", k, err)
 		}
 	}
 	return denied, nil
 }
 
-func validateGrantEnvValue(v string) error {
+// validateGrantEnvValue enforces value constraints. Regular env values are
+// single-line and capped at maxGrantEnvValueBytes. File-content env values
+// (keys with FileEnvKeyPrefix) carry multi-line file contents — newlines are
+// allowed and the size cap is bumped to maxGrantFileEnvValueBytes.
+func validateGrantEnvValue(key, v string) error {
+	if IsFileEnvKey(key) {
+		if len(v) > maxGrantFileEnvValueBytes {
+			return fmt.Errorf("file env value exceeds %d bytes", maxGrantFileEnvValueBytes)
+		}
+		// Still reject NUL bytes — they break exec env passing on every OS.
+		// Newlines are intentionally allowed here.
+		for _, c := range v {
+			if c == 0 {
+				return fmt.Errorf("env value must not contain NUL bytes")
+			}
+		}
+		return nil
+	}
 	if len(v) > maxGrantEnvValueBytes {
 		return fmt.Errorf("env value exceeds %d bytes", maxGrantEnvValueBytes)
 	}

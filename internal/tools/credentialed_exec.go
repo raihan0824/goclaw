@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	shellwords "github.com/mattn/go-shellwords"
 
+	"github.com/nextlevelbuilder/goclaw/internal/crypto"
 	"github.com/nextlevelbuilder/goclaw/internal/sandbox"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -397,22 +398,87 @@ func (t *ExecTool) executeCredentialed(ctx context.Context, cred *store.SecureCL
 		return ErrorResult(fmt.Sprintf("credentialed exec: invalid env JSON for %q: %v", binary, err))
 	}
 
-	// Step 5: Register credential values for output scrubbing
+	// Step 5: Materialize file-content env vars to a per-exec temp dir.
+	// Replaces `__FILE_<NAME>=<contents>` with `<NAME>=<temp path>` so the child
+	// process sees a real file path (kubectl reads KUBECONFIG as a file path).
+	// Sandbox path is intentionally rejected: temp files would live on the host
+	// and not be visible inside the sandbox container.
+	cleanup, err := materializeFileEnvVars(envMap, t.sandboxMgr != nil && sandboxKey != "")
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("credentialed exec: materialize file env: %v", err))
+	}
+	defer cleanup()
+
+	// Step 6: Register credential values for output scrubbing.
+	// After materialization so file paths are scrubbed (not file contents — those
+	// are no longer in envMap, but the paths shouldn't leak either).
 	for _, v := range envMap {
 		AddCredentialScrubValues(v)
 	}
 
-	// Step 6: Determine timeout
+	// Step 7: Determine timeout
 	timeout := time.Duration(cred.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
 
-	// Step 7: Execute — sandbox or host
+	// Step 8: Execute — sandbox or host
 	if t.sandboxMgr != nil && sandboxKey != "" {
 		return t.executeCredentialedSandbox(ctx, absPath, args, cwd, sandboxKey, envMap, timeout)
 	}
 	return t.executeCredentialedHost(ctx, absPath, args, cwd, envMap, timeout)
+}
+
+// materializeFileEnvVars rewrites file-content env entries into real on-disk
+// files. For each `__FILE_<NAME>=<content>` in envMap, the contents are written
+// to a freshly-created 0700 temp dir and the env entry is replaced with
+// `<NAME>=<temp file path>`. Returns a cleanup func that wipes the temp dir;
+// always safe to call (no-op if nothing was materialized).
+//
+// Rejects use under the docker sandbox path: the temp files live on the host
+// filesystem and would not appear inside the container. Sandbox users should
+// continue to mount files via volume.
+func materializeFileEnvVars(envMap map[string]string, sandbox bool) (cleanup func(), err error) {
+	var fileKeys []string
+	for k := range envMap {
+		if crypto.IsFileEnvKey(k) {
+			fileKeys = append(fileKeys, k)
+		}
+	}
+	if len(fileKeys) == 0 {
+		return func() {}, nil
+	}
+	if sandbox {
+		return func() {}, fmt.Errorf("__FILE_ env vars are not supported with sandbox exec; mount the file as a volume instead")
+	}
+
+	dir, err := os.MkdirTemp("", "goclaw-cli-*")
+	if err != nil {
+		return func() {}, fmt.Errorf("create temp dir: %w", err)
+	}
+	// 0700 by default from MkdirTemp; double-check.
+	if chErr := os.Chmod(dir, 0o700); chErr != nil {
+		_ = os.RemoveAll(dir)
+		return func() {}, fmt.Errorf("chmod temp dir: %w", chErr)
+	}
+	cleanup = func() { _ = os.RemoveAll(dir) }
+
+	for _, k := range fileKeys {
+		target := crypto.FileEnvTargetName(k)
+		if target == "" {
+			cleanup()
+			return func() {}, fmt.Errorf("invalid file env key %q (no target name after %q)", k, crypto.FileEnvKeyPrefix)
+		}
+		// File name mirrors the target env var lowercased — predictable for debugging.
+		path := filepath.Join(dir, strings.ToLower(target))
+		if writeErr := os.WriteFile(path, []byte(envMap[k]), 0o600); writeErr != nil {
+			cleanup()
+			return func() {}, fmt.Errorf("write file env %q: %w", k, writeErr)
+		}
+		delete(envMap, k)
+		envMap[target] = path
+	}
+	return cleanup, nil
 }
 
 func mergeCredentialedEnv(cred *store.SecureCLIBinary) (map[string]string, error) {
