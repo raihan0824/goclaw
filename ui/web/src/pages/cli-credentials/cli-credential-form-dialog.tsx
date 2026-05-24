@@ -157,7 +157,20 @@ export function CliCredentialFormDialog({ open, onOpenChange, credential, preset
     v.split(",").map((s) => s.trim()).filter(Boolean);
 
   const buildEnvPayload = (): Record<string, string> | null => {
-    if (!isManualMode) return envValues;
+    if (!isManualMode) {
+      // Preset mode: env vars declared as is_file get the __FILE_ prefix so
+      // the backend materializes contents to a temp file at exec time and
+      // injects <NAME>=<path> into the child env. Non-file vars pass through.
+      if (!activePreset) return envValues;
+      const env: Record<string, string> = {};
+      for (const ev of activePreset.env_vars) {
+        const val = envValues[ev.name];
+        if (val === undefined || val === "") continue;
+        const key = ev.is_file ? `__FILE_${ev.name}` : ev.name;
+        env[key] = val;
+      }
+      return env;
+    }
     const env: Record<string, string> = {};
     for (const entry of manualEnvEntries) {
       const k = entry.key.trim();

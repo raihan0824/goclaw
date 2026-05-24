@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FileDropzone } from "@/components/file-dropzone";
 import type { CLIPreset } from "./hooks/use-cli-credentials";
 
 export interface ManualEnvEntry {
@@ -56,16 +57,28 @@ export function CliCredentialEnvVarsSection({
             <Label htmlFor={`env-${ev.name}`}>
               {ev.name}
               {ev.optional && <span className="ml-1 text-xs text-muted-foreground">({tc("optional")})</span>}
+              {ev.is_file && (
+                <span className="ml-1 text-xs text-muted-foreground">({t("form.fileBacked")})</span>
+              )}
             </Label>
-            <Input
-              id={`env-${ev.name}`}
-              type="password"
-              autoComplete="off"
-              placeholder={ev.desc}
-              value={envValues[ev.name] ?? ""}
-              onChange={(e) => setEnvValues((prev) => ({ ...prev, [ev.name]: e.target.value }))}
-              className="text-base md:text-sm"
-            />
+            {ev.is_file ? (
+              <FileDropzone
+                value={envValues[ev.name] ?? ""}
+                onChange={(v) => setEnvValues((prev) => ({ ...prev, [ev.name]: v }))}
+                placeholder={ev.desc}
+                accept=".yaml,.yml,.json,.kubeconfig,.pem,.crt,.key,text/*"
+              />
+            ) : (
+              <Input
+                id={`env-${ev.name}`}
+                type="password"
+                autoComplete="off"
+                placeholder={ev.desc}
+                value={envValues[ev.name] ?? ""}
+                onChange={(e) => setEnvValues((prev) => ({ ...prev, [ev.name]: e.target.value }))}
+                className="text-base md:text-sm"
+              />
+            )}
             {ev.desc && <p className="text-xs text-muted-foreground">{ev.desc}</p>}
           </div>
         ))}

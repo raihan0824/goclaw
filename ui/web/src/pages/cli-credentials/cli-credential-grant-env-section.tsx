@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
+import { FileDropzone } from "@/components/file-dropzone";
 import { toast } from "@/stores/use-toast-store";
 import { useHttp } from "@/hooks/use-ws";
 
@@ -209,10 +209,12 @@ export function CliCredentialGrantEnvSection({
                     <Input disabled value={t("grants.envVars.revealHidden")}
                       className="text-base md:text-sm text-muted-foreground italic" />
                   ) : fileMode ? (
-                    <Textarea autoComplete="off" placeholder={t("grants.envVars.filePlaceholder")}
-                      value={entry.value} onChange={(e) => updateEntry(idx, "value", e.target.value)}
-                      rows={6}
-                      className="text-base md:text-sm font-mono resize-y" />
+                    <FileDropzone
+                      value={entry.value}
+                      onChange={(v) => updateEntry(idx, "value", v)}
+                      placeholder={t("grants.envVars.filePlaceholder")}
+                      accept=".yaml,.yml,.json,.kubeconfig,.pem,.crt,.key,text/*"
+                    />
                   ) : (
                     <Input type="password" autoComplete="off" placeholder={t("grants.envVars.valuePlaceholder")}
                       value={entry.value} onChange={(e) => updateEntry(idx, "value", e.target.value)}
