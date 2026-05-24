@@ -168,14 +168,17 @@ jobs:
             enable_embedui: "false"
             enable_python: "false"
             enable_full_skills: "false"
+            enable_kubectl: "false"
           - variant: latest
             enable_embedui: "true"
             enable_python: "true"
             enable_full_skills: "false"
+            enable_kubectl: "false"
           - variant: full
             enable_embedui: "true"
             enable_python: "true"
             enable_full_skills: "true"
+            enable_kubectl: "true"
           - platform: linux/amd64
             runner: ubuntu-latest
             arch: amd64
@@ -207,6 +210,7 @@ jobs:
             ENABLE_EMBEDUI=${{ matrix.enable_embedui }}
             ENABLE_PYTHON=${{ matrix.enable_python }}
             ENABLE_FULL_SKILLS=${{ matrix.enable_full_skills }}
+            ENABLE_KUBECTL=${{ matrix.enable_kubectl }}
             VERSION=v${{ needs.release.outputs.version }}
           cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}-${{ matrix.arch }}
