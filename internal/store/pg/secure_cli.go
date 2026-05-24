@@ -334,7 +334,11 @@ func (s *PGSecureCLIStore) scanRowsWithGrants(rows *sql.Rows) ([]store.SecureCLI
 // LookupByBinary finds the credential config for a binary name.
 // Checks agent grant authorization and merges overrides if agentID is provided.
 // Also fetches per-user env overrides via LEFT JOIN when userID is non-empty.
-func (s *PGSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID string) (*store.SecureCLIBinary, error) {
+//
+// chat-scope resolution: the LATERAL subquery returns the single most-specific
+// enabled grant — preferring chat_id = $chatID over chat_id IS NULL. Empty chatID
+// matches only NULL grants (preserves pre-patch behavior for non-chat callers).
+func (s *PGSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID, chatID string) (*store.SecureCLIBinary, error) {
 	tid := store.TenantIDFromContext(ctx)
 	isCross := store.IsCrossTenant(ctx)
 	if !isCross && tid == uuid.Nil {
@@ -359,13 +363,23 @@ func (s *PGSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string
 	// Base query
 	query := `SELECT ` + selectCols + ` FROM secure_cli_binaries b`
 
-	// LEFT JOIN agent grant
+	// LATERAL JOIN: best-matching enabled grant for this (binary, agent, chat).
+	// ORDER BY chat_id IS NULL ASC: false (specific) sorts before true (NULL).
 	if agentID != nil {
-		query += fmt.Sprintf(` LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = $%d`, argIdx)
-		args = append(args, *agentID)
-		argIdx++
+		query += fmt.Sprintf(` LEFT JOIN LATERAL (
+			SELECT id, deny_args, deny_verbose, timeout_seconds, tips, enabled, encrypted_env
+			FROM secure_cli_agent_grants
+			WHERE binary_id = b.id
+			  AND agent_id = $%d
+			  AND enabled = true
+			  AND (chat_id = $%d OR chat_id IS NULL)
+			ORDER BY chat_id IS NULL ASC
+			LIMIT 1
+		) g ON TRUE`, argIdx, argIdx+1)
+		args = append(args, *agentID, chatID)
+		argIdx += 2
 	} else {
-		query += ` LEFT JOIN secure_cli_agent_grants g ON FALSE` // never match
+		query += ` LEFT JOIN LATERAL (SELECT NULL::uuid AS id, NULL::jsonb AS deny_args, NULL::jsonb AS deny_verbose, NULL::int AS timeout_seconds, NULL::text AS tips, NULL::bool AS enabled, NULL::bytea AS encrypted_env WHERE FALSE) g ON TRUE`
 	}
 
 	// LEFT JOIN user credentials
@@ -392,13 +406,10 @@ func (s *PGSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string
 		argIdx++
 	}
 
-	// Authorization: global (no grant needed OR has enabled grant) OR non-global (must have enabled grant)
+	// Authorization: LATERAL only returns enabled grants, so g.id IS NOT NULL ⇒ allowed.
+	// Global binaries are open even with no grant.
 	if agentID != nil {
-		query += ` AND (
-			(b.is_global = true AND (g.id IS NULL OR g.enabled = true))
-			OR
-			(b.is_global = false AND g.id IS NOT NULL AND g.enabled = true)
-		)`
+		query += ` AND (b.is_global = true OR g.id IS NOT NULL)`
 	} else {
 		// No agent context — only return global binaries
 		query += ` AND b.is_global = true`
@@ -541,7 +552,10 @@ func (s *PGSecureCLIStore) IsRegisteredBinary(ctx context.Context, binaryName st
 
 // ListForAgent returns all CLIs accessible by an agent (global + granted),
 // with grant overrides merged into the returned configs.
-func (s *PGSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) ([]store.SecureCLIBinary, error) {
+// chatID, when non-empty, selects the most-specific grant per binary (chat-specific
+// over NULL default), mirroring LookupByBinary resolution. Empty chatID matches only
+// NULL default grants.
+func (s *PGSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID, chatID string) ([]store.SecureCLIBinary, error) {
 	tid := store.TenantIDFromContext(ctx)
 	isCross := store.IsCrossTenant(ctx)
 	if !isCross && tid == uuid.Nil {
@@ -554,17 +568,22 @@ func (s *PGSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) 
 		   g.encrypted_env AS grant_enc_env`
 
 	query := `SELECT ` + selectCols + ` FROM secure_cli_binaries b
-		LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = $1
+		LEFT JOIN LATERAL (
+			SELECT id, deny_args, deny_verbose, timeout_seconds, tips, encrypted_env
+			FROM secure_cli_agent_grants
+			WHERE binary_id = b.id
+			  AND agent_id = $1
+			  AND enabled = true
+			  AND (chat_id = $2 OR chat_id IS NULL)
+			ORDER BY chat_id IS NULL ASC
+			LIMIT 1
+		) g ON TRUE
 		WHERE b.enabled = true
-		  AND (
-		    (b.is_global = true AND (g.id IS NULL OR g.enabled = true))
-		    OR
-		    (b.is_global = false AND g.id IS NOT NULL AND g.enabled = true)
-		  )`
+		  AND (b.is_global = true OR g.id IS NOT NULL)`
 
-	args := []any{agentID}
+	args := []any{agentID, chatID}
 	if !isCross {
-		query += ` AND b.tenant_id = $2`
+		query += ` AND b.tenant_id = $3`
 		args = append(args, tid)
 	}
 	query += ` ORDER BY b.binary_name`

@@ -28,6 +28,7 @@ export function CliCredentialGrantsDialog({ open, onOpenChange, binary }: Props)
   const { grants, loading, createGrant, updateGrant, deleteGrant } = useCliCredentialGrants(binary.id);
 
   const [agentId, setAgentId] = useState("");
+  const [chatId, setChatId] = useState("");
   const [denyArgs, setDenyArgs] = useState("");
   const [denyVerbose, setDenyVerbose] = useState("");
   const [timeout, setTimeout] = useState("");
@@ -55,13 +56,14 @@ export function CliCredentialGrantsDialog({ open, onOpenChange, binary }: Props)
   useEffect(() => { clearForm(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clearForm = () => {
-    setAgentId(""); setDenyArgs(""); setDenyVerbose(""); setTimeout(""); setTips("");
+    setAgentId(""); setChatId(""); setDenyArgs(""); setDenyVerbose(""); setTimeout(""); setTips("");
     setEnabled(true); setEditingGrant(null); setError(""); setRejectedKeys([]);
     setEnvState(EMPTY_ENV_STATE); setOriginalEnvSet(false);
   };
 
   const selectGrant = (grant: CLIAgentGrant) => {
     setAgentId(grant.agent_id);
+    setChatId(grant.chat_id ?? "");
     setDenyArgs(grant.deny_args?.join(", ") ?? "");
     setDenyVerbose(grant.deny_verbose?.join(", ") ?? "");
     setTimeout(grant.timeout_seconds != null ? String(grant.timeout_seconds) : "");
@@ -83,8 +85,12 @@ export function CliCredentialGrantsDialog({ open, onOpenChange, binary }: Props)
     setSaving(true); setError(""); setRejectedKeys([]);
     try {
       const envVarsPayload = buildEnvVarsPayload(envState, originalEnvSet);
+      // chat_id semantics: empty input = null (applies to all chats); non-empty = scoped.
+      // On update, sending null clears any previous scope back to all-chats default.
+      const chatIdPayload: string | null = chatId.trim() === "" ? null : chatId.trim();
       const input = {
         agent_id: agentId,
+        chat_id: chatIdPayload,
         deny_args: splitComma(denyArgs),
         deny_verbose: splitComma(denyVerbose),
         timeout_seconds: timeout ? parseInt(timeout, 10) : null,
@@ -149,6 +155,7 @@ export function CliCredentialGrantsDialog({ open, onOpenChange, binary }: Props)
             binary={binary}
             agents={agents}
             agentId={agentId} setAgentId={setAgentId}
+            chatId={chatId} setChatId={setChatId}
             denyArgs={denyArgs} setDenyArgs={setDenyArgs}
             denyVerbose={denyVerbose} setDenyVerbose={setDenyVerbose}
             timeout={timeout} setTimeout={setTimeout}

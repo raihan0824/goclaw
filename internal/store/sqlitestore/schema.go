@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 37
+const SchemaVersion = 38
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -720,6 +720,39 @@ CREATE INDEX IF NOT EXISTS idx_heartbeats_due
 	// fallback is to rebuild the table without the column — see runbook
 	// docs/runbooks/packages-migration-rollback.md.
 	26: `ALTER TABLE secure_cli_agent_grants ADD COLUMN encrypted_env BLOB;`,
+
+	// Version 37 → 38: per-grant chat scoping. SQLite cannot DROP a table-level
+	// UNIQUE constraint, so we rebuild the table to swap (binary_id, agent_id,
+	// tenant_id) for (binary_id, agent_id, COALESCE(chat_id,''), tenant_id).
+	// NULL chat_id keeps today's behavior (grant applies to every chat).
+	37: `ALTER TABLE secure_cli_agent_grants ADD COLUMN chat_id TEXT;
+CREATE TABLE secure_cli_agent_grants_new (
+    id              TEXT NOT NULL PRIMARY KEY,
+    binary_id       TEXT NOT NULL REFERENCES secure_cli_binaries(id) ON DELETE CASCADE,
+    agent_id        TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    deny_args       TEXT,
+    deny_verbose    TEXT,
+    timeout_seconds INTEGER,
+    tips            TEXT,
+    encrypted_env   BLOB,
+    enabled         BOOLEAN NOT NULL DEFAULT 1,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
+    chat_id         TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+INSERT INTO secure_cli_agent_grants_new
+  (id, binary_id, agent_id, deny_args, deny_verbose, timeout_seconds, tips, encrypted_env, enabled, tenant_id, chat_id, created_at, updated_at)
+SELECT id, binary_id, agent_id, deny_args, deny_verbose, timeout_seconds, tips, encrypted_env, enabled, tenant_id, chat_id, created_at, updated_at
+FROM secure_cli_agent_grants;
+DROP TABLE secure_cli_agent_grants;
+ALTER TABLE secure_cli_agent_grants_new RENAME TO secure_cli_agent_grants;
+CREATE INDEX IF NOT EXISTS idx_scag_binary ON secure_cli_agent_grants(binary_id);
+CREATE INDEX IF NOT EXISTS idx_scag_agent ON secure_cli_agent_grants(agent_id);
+CREATE INDEX IF NOT EXISTS idx_scag_tenant ON secure_cli_agent_grants(tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scag_unique_binary_agent_chat_tenant
+    ON secure_cli_agent_grants(binary_id, agent_id, COALESCE(chat_id, ''), tenant_id);
+CREATE INDEX IF NOT EXISTS idx_scag_chat ON secure_cli_agent_grants(chat_id) WHERE chat_id IS NOT NULL;`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.

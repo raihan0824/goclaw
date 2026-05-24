@@ -78,10 +78,15 @@ type SecureCLIUserCredential struct {
 }
 
 // SecureCLIAgentGrant represents a per-agent grant with optional setting overrides.
+//
+// ChatID scopes the grant to a specific inbound chat (e.g. WhatsApp group JID).
+// NULL/nil ChatID = grant applies to every chat for the agent (the "default" grant).
+// A non-nil ChatID is more specific and wins over NULL at lookup time.
 type SecureCLIAgentGrant struct {
 	BaseModel
 	BinaryID       uuid.UUID        `json:"binary_id" db:"binary_id"`
 	AgentID        uuid.UUID        `json:"agent_id" db:"agent_id"`
+	ChatID         *string          `json:"chat_id,omitempty" db:"chat_id"`
 	DenyArgs       *json.RawMessage `json:"deny_args,omitempty" db:"deny_args"`
 	DenyVerbose    *json.RawMessage `json:"deny_verbose,omitempty" db:"deny_verbose"`
 	TimeoutSeconds *int             `json:"timeout_seconds,omitempty" db:"timeout_seconds"`
@@ -109,14 +114,18 @@ type SecureCLIStore interface {
 	// LookupByBinary finds the credential config for a binary name.
 	// If agentID is provided, checks grant authorization and merges overrides.
 	// If userID is non-empty, also fetches per-user env overrides via LEFT JOIN.
-	LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID string) (*SecureCLIBinary, error)
+	// If chatID is non-empty, prefers a chat-specific grant (chat_id = chatID) over
+	// the agent-wide default (chat_id IS NULL). Empty chatID matches only NULL grants.
+	LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID, chatID string) (*SecureCLIBinary, error)
 
 	// ListEnabled returns all enabled configs (for TOOLS.md context generation).
 	ListEnabled(ctx context.Context) ([]SecureCLIBinary, error)
 
 	// ListForAgent returns all CLIs accessible by an agent (global + granted),
 	// with grant overrides merged into the returned configs.
-	ListForAgent(ctx context.Context, agentID uuid.UUID) ([]SecureCLIBinary, error)
+	// If chatID is non-empty, prefers chat-specific grants over the agent-wide default
+	// when both exist for the same binary (same resolution as LookupByBinary).
+	ListForAgent(ctx context.Context, agentID uuid.UUID, chatID string) ([]SecureCLIBinary, error)
 
 	// IsRegisteredBinary reports whether a binary with the given name is
 	// registered and enabled for the tenant in ctx AND requires a grant

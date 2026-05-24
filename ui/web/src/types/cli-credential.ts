@@ -57,6 +57,12 @@ export interface CLIAgentGrant {
   id: string;
   binary_id: string;
   agent_id: string;
+  /**
+   * Scopes the grant to a specific inbound chat (e.g. WhatsApp group JID).
+   * null = grant applies to every chat for this agent (the "default" grant).
+   * A non-null chat_id is more specific and wins over the default at lookup time.
+   */
+  chat_id?: string | null;
   deny_args: string[] | null;
   deny_verbose: string[] | null;
   timeout_seconds: number | null;
@@ -72,6 +78,14 @@ export interface CLIAgentGrant {
 
 export interface CLIAgentGrantInput {
   agent_id: string;
+  /**
+   * Per-grant chat scope. Semantics:
+   * - absent / undefined → on create: defaults to all-chats; on update: leave unchanged
+   * - null               → on update: clear the scope (revert to all-chats default)
+   * - empty string ""    → coerced to null server-side
+   * - non-empty string   → scope grant to that chat_id (e.g. WhatsApp group JID)
+   */
+  chat_id?: string | null;
   deny_args?: string[] | null;
   deny_verbose?: string[] | null;
   timeout_seconds?: number | null;

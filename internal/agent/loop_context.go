@@ -135,6 +135,13 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 	if effectiveWorkspaceChatID != "" {
 		ctx = tools.WithWorkspaceChatID(ctx, effectiveWorkspaceChatID)
 	}
+	// Propagate inbound chat ID into tool context so chat-scoped resolution
+	// (e.g. secure CLI grants per WhatsApp group) sees the right chat at lookup time.
+	// WS gateway and HTTP tool-invoke already set this on their entry paths; this
+	// covers channel-driven runs (WhatsApp, Telegram, Discord, ...).
+	if req.ChatID != "" {
+		ctx = tools.WithToolChatID(ctx, req.ChatID)
+	}
 	if req.TeamTaskID != "" {
 		ctx = tools.WithTeamTaskID(ctx, req.TeamTaskID)
 	}

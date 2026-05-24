@@ -41,7 +41,7 @@ func newStubSecureCLIStore() *stubSecureCLIStore {
 
 // --- Meaningful methods ---
 
-func (s *stubSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID string) (*store.SecureCLIBinary, error) {
+func (s *stubSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID, chatID string) (*store.SecureCLIBinary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lookupCalls++
@@ -93,7 +93,7 @@ func (s *stubSecureCLIStore) ListEnabled(ctx context.Context) ([]store.SecureCLI
 	}
 	return out, nil
 }
-func (s *stubSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) ([]store.SecureCLIBinary, error) {
+func (s *stubSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID, chatID string) ([]store.SecureCLIBinary, error) {
 	return nil, nil
 }
 func (s *stubSecureCLIStore) GetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string) (*store.SecureCLIUserCredential, error) {

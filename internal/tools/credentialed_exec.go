@@ -625,7 +625,11 @@ func (t *ExecTool) lookupCredentialedBinary(ctx context.Context, command string)
 	// Uses CredentialUserIDFromContext to pick up merged tenant user identity
 	// (falls back to UserIDFromContext when not set).
 	userID := store.CredentialUserIDFromContext(ctx)
-	cred, err := t.secureCLIStore.LookupByBinary(ctx, normBinary, agentIDPtr, userID)
+	// chat_id picks the most-specific enabled grant (chat_id = current chat) over
+	// the agent-wide default (chat_id IS NULL). Empty when caller is not chat-scoped
+	// (cron, subagent, system tasks) — only matches NULL default grants.
+	chatID := ToolChatIDFromCtx(ctx)
+	cred, err := t.secureCLIStore.LookupByBinary(ctx, normBinary, agentIDPtr, userID, chatID)
 	if err != nil {
 		slog.Warn("secure_cli.lookup: query failed", "binary", binary, "agent_id", agentID, "error", err)
 		return nil, "", nil

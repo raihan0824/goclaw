@@ -24,7 +24,7 @@ func NewPGSecureCLIAgentGrantStore(db *sql.DB, encKey string) *PGSecureCLIAgentG
 	return &PGSecureCLIAgentGrantStore{db: db, encKey: encKey}
 }
 
-const grantSelectCols = `id, binary_id, agent_id, deny_args, deny_verbose, timeout_seconds, tips, enabled, encrypted_env, created_at, updated_at`
+const grantSelectCols = `id, binary_id, agent_id, chat_id, deny_args, deny_verbose, timeout_seconds, tips, enabled, encrypted_env, created_at, updated_at`
 
 func (s *PGSecureCLIAgentGrantStore) BinaryExists(ctx context.Context, binaryID uuid.UUID) (bool, error) {
 	query := `SELECT EXISTS(SELECT 1 FROM secure_cli_binaries WHERE id = $1`
@@ -77,9 +77,9 @@ func (s *PGSecureCLIAgentGrantStore) Create(ctx context.Context, g *store.Secure
 
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO secure_cli_agent_grants
-		 (id, binary_id, agent_id, deny_args, deny_verbose, timeout_seconds, tips, enabled, encrypted_env, tenant_id, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		g.ID, g.BinaryID, g.AgentID,
+		 (id, binary_id, agent_id, chat_id, deny_args, deny_verbose, timeout_seconds, tips, enabled, encrypted_env, tenant_id, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		g.ID, g.BinaryID, g.AgentID, nilIfEmptyStr(g.ChatID),
 		nullableJSON(g.DenyArgs), nullableJSON(g.DenyVerbose),
 		g.TimeoutSeconds, g.Tips,
 		g.Enabled, nilIfEmpty(g.EncryptedEnv), tenantID, now, now,
@@ -104,7 +104,7 @@ func (s *PGSecureCLIAgentGrantStore) Get(ctx context.Context, id uuid.UUID) (*st
 
 var grantAllowedFields = map[string]bool{
 	"deny_args": true, "deny_verbose": true, "timeout_seconds": true,
-	"tips": true, "enabled": true, "updated_at": true,
+	"tips": true, "enabled": true, "chat_id": true, "updated_at": true,
 }
 
 func (s *PGSecureCLIAgentGrantStore) Update(ctx context.Context, id uuid.UUID, updates map[string]any) error {
@@ -178,19 +178,21 @@ func (s *PGSecureCLIAgentGrantStore) ListByAgent(ctx context.Context, agentID uu
 
 func (s *PGSecureCLIAgentGrantStore) scanRow(row *sql.Row) (*store.SecureCLIAgentGrant, error) {
 	var g store.SecureCLIAgentGrant
+	var chatID *string
 	var denyArgs, denyVerbose *[]byte
 	var timeout *int
 	var tips *string
 	var encEnv []byte
 
 	err := row.Scan(
-		&g.ID, &g.BinaryID, &g.AgentID,
+		&g.ID, &g.BinaryID, &g.AgentID, &chatID,
 		&denyArgs, &denyVerbose, &timeout, &tips,
 		&g.Enabled, &encEnv, &g.CreatedAt, &g.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	g.ChatID = chatID
 	s.applyNullable(&g, denyArgs, denyVerbose, timeout, tips)
 	if err := s.decryptEnv(&g, encEnv); err != nil {
 		return nil, err
@@ -203,18 +205,20 @@ func (s *PGSecureCLIAgentGrantStore) scanRows(rows *sql.Rows) ([]store.SecureCLI
 	var result []store.SecureCLIAgentGrant
 	for rows.Next() {
 		var g store.SecureCLIAgentGrant
+		var chatID *string
 		var denyArgs, denyVerbose *[]byte
 		var timeout *int
 		var tips *string
 
 		var encEnv []byte
 		if err := rows.Scan(
-			&g.ID, &g.BinaryID, &g.AgentID,
+			&g.ID, &g.BinaryID, &g.AgentID, &chatID,
 			&denyArgs, &denyVerbose, &timeout, &tips,
 			&g.Enabled, &encEnv, &g.CreatedAt, &g.UpdatedAt,
 		); err != nil {
 			continue
 		}
+		g.ChatID = chatID
 		s.applyNullable(&g, denyArgs, denyVerbose, timeout, tips)
 		// Finding #4: Log decrypt failures instead of silently masking them.
 		// A corrupted row appears with EncryptedEnv==nil (env_set: false), which
@@ -314,4 +318,13 @@ func nilIfEmpty(b []byte) any {
 		return nil
 	}
 	return b
+}
+
+// nilIfEmptyStr returns nil if the pointer is nil or empty, otherwise the string.
+// Used to coerce empty chat_id values to SQL NULL so the "no scope" semantics are consistent.
+func nilIfEmptyStr(s *string) any {
+	if s == nil || *s == "" {
+		return nil
+	}
+	return *s
 }

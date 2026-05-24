@@ -27,7 +27,7 @@ func NewSQLiteSecureCLIAgentGrantStore(db *sql.DB, encKey string) *SQLiteSecureC
 	return &SQLiteSecureCLIAgentGrantStore{db: db, encKey: encKey}
 }
 
-const grantSelectCols = `id, binary_id, agent_id, deny_args, deny_verbose, timeout_seconds, tips, enabled, encrypted_env, created_at, updated_at`
+const grantSelectCols = `id, binary_id, agent_id, chat_id, deny_args, deny_verbose, timeout_seconds, tips, enabled, encrypted_env, created_at, updated_at`
 
 func (s *SQLiteSecureCLIAgentGrantStore) BinaryExists(ctx context.Context, binaryID uuid.UUID) (bool, error) {
 	query := `SELECT EXISTS(SELECT 1 FROM secure_cli_binaries WHERE id = ?`
@@ -81,9 +81,9 @@ func (s *SQLiteSecureCLIAgentGrantStore) Create(ctx context.Context, g *store.Se
 
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO secure_cli_agent_grants
-		 (id, binary_id, agent_id, deny_args, deny_verbose, timeout_seconds, tips, enabled, encrypted_env, tenant_id, created_at, updated_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		g.ID, g.BinaryID, g.AgentID,
+		 (id, binary_id, agent_id, chat_id, deny_args, deny_verbose, timeout_seconds, tips, enabled, encrypted_env, tenant_id, created_at, updated_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		g.ID, g.BinaryID, g.AgentID, nilIfEmptyStrPtr(g.ChatID),
 		nullableJSONRaw(g.DenyArgs), nullableJSONRaw(g.DenyVerbose),
 		g.TimeoutSeconds, g.Tips,
 		g.Enabled, nilIfEmptyBytes(g.EncryptedEnv), tenantID, nowStr, nowStr,
@@ -108,7 +108,7 @@ func (s *SQLiteSecureCLIAgentGrantStore) Get(ctx context.Context, id uuid.UUID) 
 
 var grantAllowedFields = map[string]bool{
 	"deny_args": true, "deny_verbose": true, "timeout_seconds": true,
-	"tips": true, "enabled": true, "updated_at": true,
+	"tips": true, "enabled": true, "chat_id": true, "updated_at": true,
 }
 
 func (s *SQLiteSecureCLIAgentGrantStore) Update(ctx context.Context, id uuid.UUID, updates map[string]any) error {
@@ -182,6 +182,7 @@ func (s *SQLiteSecureCLIAgentGrantStore) ListByAgent(ctx context.Context, agentI
 
 func (s *SQLiteSecureCLIAgentGrantStore) scanRow(row *sql.Row) (*store.SecureCLIAgentGrant, error) {
 	var g store.SecureCLIAgentGrant
+	var chatID *string
 	var denyArgs, denyVerbose []byte
 	var timeout *int
 	var tips *string
@@ -189,13 +190,14 @@ func (s *SQLiteSecureCLIAgentGrantStore) scanRow(row *sql.Row) (*store.SecureCLI
 	var createdAt, updatedAt sqliteTime
 
 	err := row.Scan(
-		&g.ID, &g.BinaryID, &g.AgentID,
+		&g.ID, &g.BinaryID, &g.AgentID, &chatID,
 		&denyArgs, &denyVerbose, &timeout, &tips,
 		&g.Enabled, &encEnv, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	g.ChatID = chatID
 	applyGrantNullable(&g, denyArgs, denyVerbose, timeout, tips)
 	g.CreatedAt = createdAt.Time
 	g.UpdatedAt = updatedAt.Time
@@ -210,6 +212,7 @@ func (s *SQLiteSecureCLIAgentGrantStore) scanRows(rows *sql.Rows) ([]store.Secur
 	var result []store.SecureCLIAgentGrant
 	for rows.Next() {
 		var g store.SecureCLIAgentGrant
+		var chatID *string
 		var denyArgs, denyVerbose []byte
 		var timeout *int
 		var tips *string
@@ -217,12 +220,13 @@ func (s *SQLiteSecureCLIAgentGrantStore) scanRows(rows *sql.Rows) ([]store.Secur
 		var createdAt, updatedAt sqliteTime
 
 		if err := rows.Scan(
-			&g.ID, &g.BinaryID, &g.AgentID,
+			&g.ID, &g.BinaryID, &g.AgentID, &chatID,
 			&denyArgs, &denyVerbose, &timeout, &tips,
 			&g.Enabled, &encEnv, &createdAt, &updatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan secure_cli_agent_grants row: %w", err)
 		}
+		g.ChatID = chatID
 		applyGrantNullable(&g, denyArgs, denyVerbose, timeout, tips)
 		g.CreatedAt = createdAt.Time
 		g.UpdatedAt = updatedAt.Time
@@ -318,4 +322,13 @@ func nilIfEmptyBytes(b []byte) any {
 		return nil
 	}
 	return b
+}
+
+// nilIfEmptyStrPtr returns nil if the pointer is nil or empty, otherwise the string.
+// Used to coerce empty chat_id values to SQL NULL so the "no scope" semantics are consistent.
+func nilIfEmptyStrPtr(s *string) any {
+	if s == nil || *s == "" {
+		return nil
+	}
+	return *s
 }

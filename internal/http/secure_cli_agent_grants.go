@@ -75,8 +75,11 @@ func (h *SecureCLIGrantHandler) RegisterRoutes(mux *http.ServeMux) {
 // grantCreateRequest is the typed DTO for grant creation.
 // EnvVars is optional; plaintext values are encrypted by the store layer.
 // Clients MUST NOT send encrypted_env — that field is never accepted from the wire.
+// ChatID, when set, scopes the grant to a specific inbound chat (e.g. WhatsApp
+// group JID). Absent / null / empty string = grant applies to every chat for the agent.
 type grantCreateRequest struct {
 	AgentID        uuid.UUID         `json:"agent_id"`
+	ChatID         *string           `json:"chat_id,omitempty"`
 	EnvVars        map[string]string `json:"env_vars,omitempty"`
 	DenyArgs       *json.RawMessage  `json:"deny_args,omitempty"`
 	DenyVerbose    *json.RawMessage  `json:"deny_verbose,omitempty"`
@@ -229,9 +232,16 @@ func (h *SecureCLIGrantHandler) handleCreate(w http.ResponseWriter, r *http.Requ
 		enabled = *req.Enabled
 	}
 
+	// Coerce empty-string chat_id to nil so "" and absent both mean "applies to all chats".
+	var chatID *string
+	if req.ChatID != nil && *req.ChatID != "" {
+		chatID = req.ChatID
+	}
+
 	g := &store.SecureCLIAgentGrant{
 		BinaryID:       binaryID,
 		AgentID:        req.AgentID,
+		ChatID:         chatID,
 		DenyArgs:       req.DenyArgs,
 		DenyVerbose:    req.DenyVerbose,
 		TimeoutSeconds: req.TimeoutSeconds,
@@ -311,11 +321,11 @@ func (h *SecureCLIGrantHandler) handleUpdate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Build typed field updates (allowlist: deny_args, deny_verbose, timeout_seconds, tips, enabled).
+	// Build typed field updates (allowlist: deny_args, deny_verbose, timeout_seconds, tips, enabled, chat_id).
 	updates := map[string]any{"updated_at": time.Now()}
 	allowedScalar := map[string]bool{
 		"deny_args": true, "deny_verbose": true, "timeout_seconds": true,
-		"tips": true, "enabled": true,
+		"tips": true, "enabled": true, "chat_id": true,
 	}
 	for k, v := range raw {
 		if k == "env_vars" {
@@ -330,6 +340,27 @@ func (h *SecureCLIGrantHandler) handleUpdate(w http.ResponseWriter, r *http.Requ
 					"error": i18n.T(locale, i18n.MsgGrantEnvValueInvalid, "field "+k+": "+err.Error()),
 				})
 				return
+			}
+			// chat_id: empty string coerces to nil (DB NULL) so "" and null both mean
+			// "applies to all chats". Reject non-string types — chat_id is text only.
+			if k == "chat_id" {
+				if decoded == nil {
+					updates[k] = nil
+					continue
+				}
+				s, isStr := decoded.(string)
+				if !isStr {
+					writeJSON(w, http.StatusBadRequest, map[string]string{
+						"error": i18n.T(locale, i18n.MsgGrantEnvValueInvalid, "chat_id must be string or null"),
+					})
+					return
+				}
+				if s == "" {
+					updates[k] = nil
+				} else {
+					updates[k] = s
+				}
+				continue
 			}
 			updates[k] = decoded
 		}

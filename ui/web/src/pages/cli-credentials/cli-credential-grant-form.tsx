@@ -28,6 +28,9 @@ interface Props {
   setTips: (v: string) => void;
   enabled: boolean;
   setEnabled: (v: boolean) => void;
+  /** Per-grant chat scope. Empty string = applies to all chats. */
+  chatId: string;
+  setChatId: (v: string) => void;
   /** Per-grant env override state */
   envState: GrantEnvState;
   setEnvState: (next: GrantEnvState) => void;
@@ -51,6 +54,7 @@ export function CliCredentialGrantForm({
   denyArgs, setDenyArgs, denyVerbose, setDenyVerbose,
   timeout, setTimeout, tips, setTips,
   enabled, setEnabled,
+  chatId, setChatId,
   envState, setEnvState,
   editingGrantId, initialEnvSet, initialEnvKeys, rejectedKeys,
   isEditing, saving,
@@ -128,6 +132,17 @@ export function CliCredentialGrantForm({
             rows={2}
             className="text-base md:text-sm resize-none"
           />
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label className="text-xs text-muted-foreground">{t("grants.chatIdLabel")}</Label>
+          <Input
+            value={chatId}
+            onChange={(e) => setChatId(e.target.value)}
+            placeholder={t("grants.chatIdPlaceholder")}
+            className="text-base md:text-sm"
+          />
+          <span className="text-xs text-muted-foreground">{t("grants.chatIdHelp")}</span>
         </div>
 
         <div className="flex items-center gap-2">

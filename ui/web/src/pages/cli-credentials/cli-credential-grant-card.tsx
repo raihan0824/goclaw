@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Trash2, Pencil, KeyRound } from "lucide-react";
+import { Trash2, Pencil, KeyRound, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,12 @@ export function CliCredentialGrantCard({ grant, agentName, isActive, disabled, o
               <Badge variant="outline" className="text-2xs px-1.5 py-0 gap-0.5">
                 <KeyRound className="h-2.5 w-2.5" />
                 {t("grants.envVars.title")}
+              </Badge>
+            )}
+            {grant.chat_id && (
+              <Badge variant="outline" className="text-2xs px-1.5 py-0 gap-0.5 max-w-[200px]">
+                <MessageSquare className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate font-mono">{grant.chat_id}</span>
               </Badge>
             )}
             {isActive && <Pencil className="h-3 w-3 text-muted-foreground" />}

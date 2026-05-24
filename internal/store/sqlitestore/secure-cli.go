@@ -366,7 +366,13 @@ type sqliteGrantRaw struct {
 
 // LookupByBinary finds the credential config for a binary name.
 // LEFT JOINs grant overrides and per-user credentials.
-func (s *SQLiteSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID string) (*store.SecureCLIBinary, error) {
+//
+// chat-scope resolution: the LEFT JOIN matches on the ID returned by a correlated
+// scalar subquery that picks the single most-specific enabled grant — preferring
+// chat_id = chatID over chat_id IS NULL. Empty chatID matches only NULL grants
+// (preserves pre-patch behavior for non-chat callers). SQLite lacks LATERAL, so
+// this scalar-subquery pattern is the portable equivalent.
+func (s *SQLiteSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID, chatID string) (*store.SecureCLIBinary, error) {
 	tid := store.TenantIDFromContext(ctx)
 	isCross := store.IsCrossTenant(ctx)
 	if !isCross && tid == uuid.Nil {
@@ -380,11 +386,19 @@ func (s *SQLiteSecureCLIStore) LookupByBinary(ctx context.Context, binaryName st
 
 	query := `SELECT ` + selectCols
 
-	// LEFT JOIN agent grant
+	// LEFT JOIN agent grant via correlated scalar subquery (best-matching enabled grant).
 	if agentID != nil {
 		query += `, uc_user.encrypted_env AS user_env FROM secure_cli_binaries b`
-		query += ` LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = ?`
-		args = append(args, *agentID)
+		query += ` LEFT JOIN secure_cli_agent_grants g ON g.id = (
+			SELECT id FROM secure_cli_agent_grants
+			WHERE binary_id = b.id
+			  AND agent_id = ?
+			  AND enabled = 1
+			  AND (chat_id = ? OR chat_id IS NULL)
+			ORDER BY chat_id IS NULL ASC
+			LIMIT 1
+		)`
+		args = append(args, *agentID, chatID)
 	} else {
 		query += `, NULL AS user_env FROM secure_cli_binaries b`
 		query += ` LEFT JOIN secure_cli_agent_grants g ON 0`
@@ -420,13 +434,10 @@ func (s *SQLiteSecureCLIStore) LookupByBinary(ctx context.Context, binaryName st
 		args = append(args, tid)
 	}
 
-	// Authorization
+	// Authorization: grant subquery only returns enabled grants, so g.id IS NOT NULL ⇒ allowed.
+	// Global binaries are open even with no grant.
 	if agentID != nil {
-		query += ` AND (
-			(b.is_global = 1 AND (g.id IS NULL OR g.enabled = 1))
-			OR
-			(b.is_global = 0 AND g.id IS NOT NULL AND g.enabled = 1)
-		)`
+		query += ` AND (b.is_global = 1 OR g.id IS NOT NULL)`
 	} else {
 		query += ` AND b.is_global = 1`
 	}
@@ -567,7 +578,10 @@ func (s *SQLiteSecureCLIStore) IsRegisteredBinary(ctx context.Context, binaryNam
 
 // ListForAgent returns all CLIs accessible by an agent (global + granted),
 // with grant overrides merged into the returned configs.
-func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) ([]store.SecureCLIBinary, error) {
+// chatID, when non-empty, selects the most-specific grant per binary (chat-specific
+// over NULL default), mirroring LookupByBinary resolution. Empty chatID matches only
+// NULL default grants.
+func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID, chatID string) ([]store.SecureCLIBinary, error) {
 	tid := store.TenantIDFromContext(ctx)
 	isCross := store.IsCrossTenant(ctx)
 	if !isCross && tid == uuid.Nil {
@@ -580,14 +594,19 @@ func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UU
 		   g.encrypted_env AS grant_enc_env`
 
 	query := `SELECT ` + selectCols + ` FROM secure_cli_binaries b
-		LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = ?
+		LEFT JOIN secure_cli_agent_grants g ON g.id = (
+			SELECT id FROM secure_cli_agent_grants
+			WHERE binary_id = b.id
+			  AND agent_id = ?
+			  AND enabled = 1
+			  AND (chat_id = ? OR chat_id IS NULL)
+			ORDER BY chat_id IS NULL ASC
+			LIMIT 1
+		)
 		WHERE b.enabled = 1
-		  AND (
-		    b.is_global = 1
-		    OR (b.id IN (SELECT binary_id FROM secure_cli_agent_grants WHERE agent_id = ? AND enabled = 1))
-		  )`
+		  AND (b.is_global = 1 OR g.id IS NOT NULL)`
 
-	args := []any{agentID, agentID}
+	args := []any{agentID, chatID}
 	if !isCross {
 		query += ` AND b.tenant_id = ?`
 		args = append(args, tid)

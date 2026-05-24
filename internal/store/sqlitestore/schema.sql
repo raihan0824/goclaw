@@ -1231,14 +1231,17 @@ CREATE TABLE IF NOT EXISTS secure_cli_agent_grants (
     encrypted_env   BLOB,
     enabled         BOOLEAN NOT NULL DEFAULT 1,
     tenant_id       TEXT NOT NULL REFERENCES tenants(id),
+    chat_id         TEXT,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    UNIQUE(binary_id, agent_id, tenant_id)
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_scag_binary ON secure_cli_agent_grants(binary_id);
 CREATE INDEX IF NOT EXISTS idx_scag_agent ON secure_cli_agent_grants(agent_id);
 CREATE INDEX IF NOT EXISTS idx_scag_tenant ON secure_cli_agent_grants(tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scag_unique_binary_agent_chat_tenant
+    ON secure_cli_agent_grants(binary_id, agent_id, COALESCE(chat_id, ''), tenant_id);
+CREATE INDEX IF NOT EXISTS idx_scag_chat ON secure_cli_agent_grants(chat_id) WHERE chat_id IS NOT NULL;
 
 -- ============================================================
 -- Table: api_keys
