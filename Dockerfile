@@ -74,6 +74,9 @@ ARG ENABLE_PYTHON=false
 ARG ENABLE_NODE=false
 ARG ENABLE_FULL_SKILLS=false
 ARG ENABLE_CLAUDE_CLI=false
+ARG ENABLE_KUBECTL=false
+ARG KUBECTL_VERSION=v1.31.0
+ARG UV_VERSION=0.5.11
 
 # Copy pinned Python deps (cleaned up after install).
 # requirements-base.txt: shared deps for ENABLE_PYTHON and ENABLE_FULL_SKILLS.
@@ -107,6 +110,23 @@ RUN set -eux; \
     if [ "$ENABLE_CLAUDE_CLI" = "true" ]; then \
         npm install -g --cache /tmp/npm-cache @anthropic-ai/claude-code@^2.1.91; \
         rm -rf /tmp/npm-cache; \
+    fi; \
+    if [ "$ENABLE_KUBECTL" = "true" ]; then \
+        apk add --no-cache curl; \
+        case "$(uname -m)" in \
+            x86_64) K_ARCH=amd64; UV_ARCH=x86_64;; \
+            aarch64) K_ARCH=arm64; UV_ARCH=aarch64;; \
+            *) echo "unsupported arch $(uname -m)" && exit 1;; \
+        esac; \
+        curl -fsSLo /usr/local/bin/kubectl \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${K_ARCH}/kubectl"; \
+        chmod +x /usr/local/bin/kubectl; \
+        curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${UV_ARCH}-unknown-linux-musl.tar.gz" \
+            | tar -xz -C /tmp; \
+        mv "/tmp/uv-${UV_ARCH}-unknown-linux-musl/uv" /usr/local/bin/uv; \
+        mv "/tmp/uv-${UV_ARCH}-unknown-linux-musl/uvx" /usr/local/bin/uvx; \
+        chmod +x /usr/local/bin/uv /usr/local/bin/uvx; \
+        rm -rf "/tmp/uv-${UV_ARCH}-unknown-linux-musl"; \
     fi; \
     rm -f /tmp/requirements-base.txt /tmp/requirements-skills.txt
 

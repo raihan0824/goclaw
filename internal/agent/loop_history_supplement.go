@@ -29,7 +29,9 @@ func (l *Loop) buildCredentialCLIContext(ctx context.Context) string {
 	var creds []store.SecureCLIBinary
 	var err error
 	if l.agentUUID != uuid.Nil {
-		creds, err = l.secureCLIStore.ListForAgent(ctx, l.agentUUID)
+		// Pass chat_id so chat-specific grants take precedence over the agent-wide
+		// default when both exist. Empty chat_id matches only NULL default grants.
+		creds, err = l.secureCLIStore.ListForAgent(ctx, l.agentUUID, tools.ToolChatIDFromCtx(ctx))
 	} else {
 		creds, err = l.secureCLIStore.ListEnabled(ctx)
 	}

@@ -108,6 +108,11 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 	if l.memoryCfg != nil {
 		ctx = tools.WithMemoryConfig(ctx, l.memoryCfg)
 	}
+	var waitToolCfg *config.WaitToolPolicy
+	if l.agentToolPolicy != nil && l.agentToolPolicy.Wait != nil {
+		waitToolCfg = l.agentToolPolicy.Wait
+		ctx = tools.WithWaitToolConfig(ctx, waitToolCfg)
+	}
 	if l.sandboxCfg != nil {
 		ctx = tools.WithSandboxConfig(ctx, l.sandboxCfg)
 	}
@@ -129,6 +134,13 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 	}
 	if effectiveWorkspaceChatID != "" {
 		ctx = tools.WithWorkspaceChatID(ctx, effectiveWorkspaceChatID)
+	}
+	// Propagate inbound chat ID into tool context so chat-scoped resolution
+	// (e.g. secure CLI grants per WhatsApp group) sees the right chat at lookup time.
+	// WS gateway and HTTP tool-invoke already set this on their entry paths; this
+	// covers channel-driven runs (WhatsApp, Telegram, Discord, ...).
+	if req.ChatID != "" {
+		ctx = tools.WithToolChatID(ctx, req.ChatID)
 	}
 	if req.TeamTaskID != "" {
 		ctx = tools.WithTeamTaskID(ctx, req.TeamTaskID)
@@ -156,6 +168,9 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 		}
 		// Apply user isolation layer via pipeline.
 		shared := l.shouldShareWorkspace(req.UserID, req.PeerKind)
+		if shared {
+			ctx = store.WithSharedContext(ctx)
+		}
 		effectiveWorkspace := tools.ResolveWorkspace(ws,
 			tools.UserChatLayer(tools.SanitizePathSegment(req.UserID), shared),
 		)
@@ -359,6 +374,7 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 		SharedMemory:        store.IsSharedMemory(ctx),
 		SharedKG:            store.IsSharedKG(ctx),
 		SharedSessions:      store.IsSharedSessions(ctx),
+		SharedContext:       store.IsSharedContext(ctx),
 		RestrictToWorkspace: l.restrictToWs != nil && *l.restrictToWs,
 		BuiltinToolSettings: l.builtinToolSettings,
 		ChannelType:         req.ChannelType,
@@ -367,6 +383,7 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 		ParentProvider:      providerName,
 		MemoryCfg:           l.memoryCfg,
 		SandboxCfg:          l.sandboxCfg,
+		WaitToolCfg:         waitToolCfg,
 		ShellDenyGroups:     l.shellDenyGroups,
 		Workspace:           tools.ToolWorkspaceFromCtx(ctx),
 		TeamWorkspace:       tools.ToolTeamWorkspaceFromCtx(ctx),

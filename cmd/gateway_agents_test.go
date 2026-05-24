@@ -33,13 +33,13 @@ func (s *stubSecureCLIStoreCmd) List(ctx context.Context) ([]store.SecureCLIBina
 func (s *stubSecureCLIStoreCmd) ListEnabled(ctx context.Context) ([]store.SecureCLIBinary, error) {
 	return nil, nil
 }
-func (s *stubSecureCLIStoreCmd) ListForAgent(ctx context.Context, agentID uuid.UUID) ([]store.SecureCLIBinary, error) {
+func (s *stubSecureCLIStoreCmd) ListForAgent(ctx context.Context, agentID uuid.UUID, chatID string) ([]store.SecureCLIBinary, error) {
 	return nil, nil
 }
 func (s *stubSecureCLIStoreCmd) IsRegisteredBinary(ctx context.Context, binaryName string) (bool, error) {
 	return false, nil
 }
-func (s *stubSecureCLIStoreCmd) LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID string) (*store.SecureCLIBinary, error) {
+func (s *stubSecureCLIStoreCmd) LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID, chatID string) (*store.SecureCLIBinary, error) {
 	return nil, nil
 }
 func (s *stubSecureCLIStoreCmd) GetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string) (*store.SecureCLIUserCredential, error) {
