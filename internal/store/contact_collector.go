@@ -60,6 +60,17 @@ func (c *ContactCollector) ResolveTenantUserID(ctx context.Context, channelType,
 	return c.store.ResolveTenantUserID(ctx, channelType, senderID)
 }
 
+// ListGroupContacts returns all known group contacts for a (channel_type,
+// channel_instance) pair. Used to build the per-message group roster that
+// the agent sees in its system prompt. Tenant scope comes from ctx.
+func (c *ContactCollector) ListGroupContacts(ctx context.Context, channelType, channelInstance string) ([]ChannelContact, error) {
+	return c.store.ListContacts(ctx, ContactListOpts{
+		ChannelType: channelType,
+		ContactType: "group",
+		Limit:       200,
+	})
+}
+
 // UpsertContactForce writes the contact unconditionally, bypassing the seen
 // cache. Used when the caller knows new information (e.g. a freshly-resolved
 // WhatsApp group name) and needs to refresh an existing row that was upserted

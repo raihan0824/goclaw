@@ -265,6 +265,15 @@ func processNormalMessage(
 		extraPrompt += identity
 	}
 
+	// Append WhatsApp group roster so the agent can translate raw JIDs it
+	// encounters in memory recall / session history into human-readable names.
+	if roster := msg.Metadata[tools.MetaWhatsAppGroupRoster]; roster != "" {
+		if extraPrompt != "" {
+			extraPrompt += "\n\n"
+		}
+		extraPrompt += roster
+	}
+
 	// Per-topic skill filter override (from group/topic config hierarchy).
 	var skillFilter []string
 	if ts := msg.Metadata[tools.MetaTopicSkills]; ts != "" {

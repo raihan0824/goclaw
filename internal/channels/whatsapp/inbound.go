@@ -137,6 +137,25 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 			metadata[tools.MetaChatTitle] = groupName
 		}
 	}
+	// Roster of every known group so the agent can resolve JIDs it encounters
+	// in memory recall / session history / cross-group questions. Includes the
+	// admin-configured aliases plus the auto-resolved name of the current chat
+	// (in case the admin hasn't aliased it yet). Format is a plain text block
+	// "JID = Name" per line, parsed visually by the LLM.
+	if peerKind == "group" {
+		roster := c.buildGroupRoster(ctx, groupName, chatID)
+		if roster != "" {
+			metadata[tools.MetaWhatsAppGroupRoster] = roster
+		}
+		// Visibility: confirm the roster the agent will see for this turn.
+		// Lines = number of known groups (header + one per entry, minus 1).
+		slog.Debug("whatsapp group roster built",
+			"chat_id", chatID,
+			"current_name", groupName,
+			"aliases_configured", len(c.config.GroupAliases),
+			"roster_bytes", len(roster),
+		)
+	}
 
 	// STT: transcribe audio items (opt-in via builtin_tools[stt].settings.whatsapp_enabled,
 	// default false per Decision 6 — enabling breaks E2E encryption for voice messages).
