@@ -189,6 +189,7 @@ export const configSchema: Record<string, FieldDef[]> = {
     { key: "silent_chats", label: "Silent Groups", type: "tags", peerKind: "group", help: "Group JIDs (e.g. 120363...@g.us) — bot never replies here, even when @mentioned. Messages still persist to the session and create episodic summaries, so the agent can recall context from these groups when chatting elsewhere with the same user." },
     { key: "mention_required_chats", label: "Mention-Required Groups", type: "tags", peerKind: "group", help: "Group JIDs where @mention is required, overriding the channel default" },
     { key: "auto_respond_chats", label: "Auto-Respond Groups", type: "tags", peerKind: "group", help: "Group JIDs where every message gets a reply, overriding the channel default" },
+    { key: "group_aliases", label: "Group Display Names (manual)", type: "textarea", placeholder: "120363111...@g.us = Engineering Team\n120363222...@g.us = Random Chat", help: "Override or supply names when WhatsApp can't fetch them automatically. One per line: <group JID> = <display name>. Wins over the auto-fetched name." },
     { key: "allow_from", label: "Allowed Users", type: "tags", help: "WhatsApp user IDs" },
     { key: "block_reply", label: "Block Reply", type: "select", options: blockReplyOptions, defaultValue: "inherit", help: "Deliver intermediate text during tool iterations" },
   ],

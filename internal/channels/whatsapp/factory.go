@@ -23,6 +23,7 @@ type whatsappInstanceConfig struct {
 	SilentChats          []string `json:"silent_chats,omitempty"`
 	MentionRequiredChats []string `json:"mention_required_chats,omitempty"`
 	AutoRespondChats     []string `json:"auto_respond_chats,omitempty"`
+	GroupAliases         string   `json:"group_aliases,omitempty"`
 }
 
 // FactoryWithDB returns a ChannelFactory with DB access for whatsmeow auth state.
@@ -72,6 +73,7 @@ func FactoryWithDBAudio(db *sql.DB, pendingStore store.PendingMessageStore, dial
 			SilentChats:          ic.SilentChats,
 			MentionRequiredChats: ic.MentionRequiredChats,
 			AutoRespondChats:     ic.AutoRespondChats,
+			GroupAliases:         ic.GroupAliases,
 		}
 		// DB instances default to "pairing" for groups (secure by default).
 		if waCfg.GroupPolicy == "" {

@@ -59,3 +59,27 @@ func (c *ContactCollector) EnsureContact(ctx context.Context, channelType, chann
 func (c *ContactCollector) ResolveTenantUserID(ctx context.Context, channelType, senderID string) (string, error) {
 	return c.store.ResolveTenantUserID(ctx, channelType, senderID)
 }
+
+// UpsertContactForce writes the contact unconditionally, bypassing the seen
+// cache. Used when the caller knows new information (e.g. a freshly-resolved
+// WhatsApp group name) and needs to refresh an existing row that was upserted
+// earlier with an empty display_name. After writing, the seen-cache entry is
+// refreshed so subsequent calls within the TTL window still dedupe.
+func (c *ContactCollector) UpsertContactForce(ctx context.Context, channelType, channelInstance, senderID, userID, displayName, username, peerKind, contactType, threadID, threadType string) {
+	if contactType == "" {
+		contactType = "user"
+	}
+	if err := c.store.UpsertContact(ctx, channelType, channelInstance, senderID, userID, displayName, username, peerKind, contactType, threadID, threadType); err != nil {
+		slog.Warn("contact_collector.upsert_force_failed",
+			"error", err,
+			"tenant_id", TenantIDFromContext(ctx),
+			"channel", channelType,
+			"instance", channelInstance,
+			"sender", senderID,
+		)
+		return
+	}
+	tid := TenantIDFromContext(ctx)
+	key := tid.String() + ":" + channelType + ":" + channelInstance + ":" + senderID + ":" + threadID
+	c.seen.Set(ctx, key, true, contactSeenTTL)
+}

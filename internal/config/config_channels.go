@@ -147,6 +147,12 @@ type WhatsAppConfig struct {
 	SilentChats          FlexibleStringSlice `json:"silent_chats,omitempty"`           // absorb context only; never reply, even when @mentioned
 	MentionRequiredChats FlexibleStringSlice `json:"mention_required_chats,omitempty"` // force @mention requirement here regardless of RequireMention
 	AutoRespondChats     FlexibleStringSlice `json:"auto_respond_chats,omitempty"`     // always respond here regardless of RequireMention
+
+	// GroupAliases: admin-provided display names for groups when whatsmeow's
+	// GetGroupInfo can't fetch them (just-paired, never-synced, archived, etc.).
+	// Raw textarea content — one entry per line, `JID = Display Name`. Parsed
+	// at lookup time. Overrides any name fetched from whatsmeow.
+	GroupAliases string `json:"group_aliases,omitempty"`
 }
 
 type ZaloConfig struct {

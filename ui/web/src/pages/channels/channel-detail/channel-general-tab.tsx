@@ -23,6 +23,7 @@ const ESSENTIAL_CONFIG_KEYS: Record<string, string[]> = {
   whatsapp: [
     "dm_policy", "group_policy", "require_mention",
     "silent_chats", "mention_required_chats", "auto_respond_chats",
+    "group_aliases",
   ],
 };
 

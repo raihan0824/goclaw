@@ -12,6 +12,8 @@ package whatsapp
 
 import (
 	"context"
+	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,11 +77,21 @@ func (c *groupNameCache) setFailed(jid string) {
 // from whatsmeow when the local cache is cold or stale. Empty string is a
 // valid (non-error) return — group either has no name or we couldn't fetch
 // one yet; callers should treat empty as "unknown" and fall back to the JID.
+//
+// Manual GroupAliases on the channel config win — admins can override the
+// resolved name (or supply one when whatsmeow can't fetch it at all).
 func (c *Channel) resolveGroupName(ctx context.Context, chatJID types.JID) string {
 	if chatJID.Server != types.GroupServer {
 		return ""
 	}
 	key := chatJID.String()
+
+	// Manual override wins. Parsing the textarea on every group inbound is
+	// cheap (a few lines × a few comparisons); not worth caching unless a
+	// profile shows otherwise.
+	if alias := lookupGroupAlias(c.config.GroupAliases, key); alias != "" {
+		return alias
+	}
 
 	if c.groupNames == nil {
 		// Defensive: New() should always initialise this; recover if not.
@@ -102,9 +114,48 @@ func (c *Channel) resolveGroupName(ctx context.Context, chatJID types.JID) strin
 
 	info, err := c.client.GetGroupInfo(ctx, chatJID)
 	if err != nil || info == nil {
+		// Surface so admins can debug why the picker dropdown shows bare JIDs.
+		// Most common cause: client just connected and hasn't synced groups yet,
+		// or transient network. The 5min negative TTL means at most one log
+		// line per group per 5min during an outage.
+		slog.Warn("whatsapp: resolve group name failed",
+			"chat_jid", key,
+			"error", err,
+		)
 		c.groupNames.setFailed(key)
 		return ""
 	}
 	c.groupNames.set(key, info.Name)
+	slog.Debug("whatsapp: resolved group name", "chat_jid", key, "name", info.Name)
 	return info.Name
+}
+
+// lookupGroupAlias scans the admin-provided textarea for a `JID = Display Name`
+// line matching wantJID and returns the name (empty if not found). Format:
+//
+//	120363111...@g.us = Engineering Team
+//	120363222...@g.us = Random Chat
+//
+// Whitespace around `=` is trimmed. Lines without `=` are ignored.
+// First match wins.
+func lookupGroupAlias(raw, wantJID string) string {
+	if raw == "" {
+		return ""
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		eq := strings.IndexByte(line, '=')
+		if eq <= 0 {
+			continue
+		}
+		jid := strings.TrimSpace(line[:eq])
+		name := strings.TrimSpace(line[eq+1:])
+		if jid == wantJID && name != "" {
+			return name
+		}
+	}
+	return ""
 }

@@ -182,10 +182,12 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 	if cc := c.ContactCollector(); cc != nil {
 		cc.EnsureContact(ctx, c.Type(), c.Name(), senderID, senderID,
 			metadata["user_name"], "", peerKind, "user", "", "")
-		// Also upsert a group-kind contact so the admin UI picker can show
-		// the human-readable group name instead of the bare JID.
-		if peerKind == "group" {
-			cc.EnsureContact(ctx, c.Type(), c.Name(), chatID, chatID,
+		// Group contact: skip when groupName is empty (don't poison the seen
+		// cache with an unnamed row that would block refresh for 30 min). Use
+		// the Force variant so a previously-empty row gets updated as soon as
+		// whatsmeow returns the real name on a later message.
+		if peerKind == "group" && groupName != "" {
+			cc.UpsertContactForce(ctx, c.Type(), c.Name(), chatID, chatID,
 				groupName, "", "group", "group", "", "")
 		}
 	}
