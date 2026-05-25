@@ -285,6 +285,7 @@ function FieldRenderer({
           <MultiUserPicker
             value={(value as string[]) ?? []}
             onChange={(v) => onChange(v.length > 0 ? v : undefined)}
+            peerKind={field.peerKind}
             placeholder={field.placeholder ?? t("groupOverrides.fields.allowedUsersPlaceholder")}
           />
           {help && <p className="text-xs text-muted-foreground">{help}</p>}

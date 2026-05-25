@@ -83,13 +83,12 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 	if historyLimit == 0 {
 		historyLimit = channels.DefaultGroupHistoryLimit
 	}
-	if peerKind == "group" && c.config.RequireMention != nil && *c.config.RequireMention {
-		if !c.isMentioned(evt) {
-			// Not mentioned — record for context and skip.
-			senderLabel := evt.Info.PushName
-			if senderLabel == "" {
-				senderLabel = senderID
-			}
+	if peerKind == "group" {
+		senderLabel := evt.Info.PushName
+		if senderLabel == "" {
+			senderLabel = senderID
+		}
+		recordHistory := func() {
 			c.GroupHistory().Record(chatID, channels.HistoryEntry{
 				Sender:    senderLabel,
 				SenderID:  senderID,
@@ -97,11 +96,25 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 				Timestamp: evt.Info.Timestamp,
 				MessageID: string(evt.Info.ID),
 			}, historyLimit)
+		}
+
+		// Silent-list wins over every other check. Agent never replies here —
+		// even when @mentioned — but still absorbs context for cross-chat recall.
+		if c.isSilentChat(chatID) {
+			recordHistory()
+			slog.Debug("whatsapp silent chat — message absorbed without reply", "chat_id", chatID)
 			return
 		}
-		// Mentioned — prepend accumulated group context.
-		content = c.GroupHistory().BuildContext(chatID, content, historyLimit)
-		c.GroupHistory().Clear(chatID)
+
+		if c.requireMentionFor(chatID) {
+			if !c.isMentioned(evt) {
+				recordHistory()
+				return
+			}
+			// Mentioned — prepend accumulated group context.
+			content = c.GroupHistory().BuildContext(chatID, content, historyLimit)
+			c.GroupHistory().Clear(chatID)
+		}
 	}
 
 	metadata := map[string]string{
