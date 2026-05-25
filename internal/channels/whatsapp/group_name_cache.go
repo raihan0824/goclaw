@@ -13,7 +13,6 @@ package whatsapp
 import (
 	"context"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -86,11 +85,9 @@ func (c *Channel) resolveGroupName(ctx context.Context, chatJID types.JID) strin
 	}
 	key := chatJID.String()
 
-	// Manual override wins. Parsing the textarea on every group inbound is
-	// cheap (a few lines × a few comparisons); not worth caching unless a
-	// profile shows otherwise.
-	if alias := lookupGroupAlias(c.config.GroupAliases, key); alias != "" {
-		return alias
+	// Manual override wins — simple map lookup.
+	if name, ok := c.config.GroupAliases[key]; ok && name != "" {
+		return name
 	}
 
 	if c.groupNames == nil {
@@ -128,34 +125,4 @@ func (c *Channel) resolveGroupName(ctx context.Context, chatJID types.JID) strin
 	c.groupNames.set(key, info.Name)
 	slog.Debug("whatsapp: resolved group name", "chat_jid", key, "name", info.Name)
 	return info.Name
-}
-
-// lookupGroupAlias scans the admin-provided textarea for a `JID = Display Name`
-// line matching wantJID and returns the name (empty if not found). Format:
-//
-//	120363111...@g.us = Engineering Team
-//	120363222...@g.us = Random Chat
-//
-// Whitespace around `=` is trimmed. Lines without `=` are ignored.
-// First match wins.
-func lookupGroupAlias(raw, wantJID string) string {
-	if raw == "" {
-		return ""
-	}
-	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		eq := strings.IndexByte(line, '=')
-		if eq <= 0 {
-			continue
-		}
-		jid := strings.TrimSpace(line[:eq])
-		name := strings.TrimSpace(line[eq+1:])
-		if jid == wantJID && name != "" {
-			return name
-		}
-	}
-	return ""
 }

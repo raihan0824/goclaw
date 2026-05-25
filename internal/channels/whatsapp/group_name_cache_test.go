@@ -69,40 +69,6 @@ func TestGroupNameCache_FailedEntryUsesShorterTTL(t *testing.T) {
 	}
 }
 
-func TestLookupGroupAlias(t *testing.T) {
-	const raw = `
-# header comment is ignored
-120363111@g.us = Engineering Team
-  120363222@g.us  =   Random Chat With Spaces
-120363333@g.us=NoSpaces
-malformed line without equals
-=name without jid
-120363444@g.us =
-`
-	cases := []struct {
-		jid  string
-		want string
-	}{
-		{"120363111@g.us", "Engineering Team"},
-		{"120363222@g.us", "Random Chat With Spaces"},
-		{"120363333@g.us", "NoSpaces"},
-		{"malformed", ""},                  // not a key=value line
-		{"120363444@g.us", ""},             // empty name → treated as unset
-		{"120363999@g.us", ""},             // not in list
-	}
-	for _, tc := range cases {
-		if got := lookupGroupAlias(raw, tc.jid); got != tc.want {
-			t.Errorf("lookupGroupAlias(%q) = %q, want %q", tc.jid, got, tc.want)
-		}
-	}
-}
-
-func TestLookupGroupAlias_EmptyRaw(t *testing.T) {
-	if got := lookupGroupAlias("", "120363111@g.us"); got != "" {
-		t.Errorf("empty raw must return empty, got %q", got)
-	}
-}
-
 // TestGroupNameCache_SetOverwritesFailed verifies that a successful lookup
 // after a failure flips the entry back to the long TTL.
 func TestGroupNameCache_SetOverwritesFailed(t *testing.T) {

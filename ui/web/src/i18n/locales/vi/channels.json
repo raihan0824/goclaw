@@ -421,5 +421,12 @@
     "relinkDevice": "Liên kết lại",
     "connectedSuccess": "✅ Kết nối WhatsApp thành công!",
     "tabQrCode": "Mã QR"
+  },
+  "groupAliases": {
+    "jidPlaceholder": "JID nhóm (vd. 120363...@g.us)",
+    "namePlaceholder": "Tên hiển thị",
+    "addRow": "Thêm nhóm",
+    "removeRow": "Xóa",
+    "duplicateJid": "JID trùng — chỉ giá trị cuối cùng được lưu"
   }
 }

@@ -20,10 +20,10 @@ type whatsappInstanceConfig struct {
 	HistoryLimit         int      `json:"history_limit,omitempty"`
 	AllowFrom            []string `json:"allow_from,omitempty"`
 	BlockReply           *bool    `json:"block_reply,omitempty"`
-	SilentChats          []string `json:"silent_chats,omitempty"`
-	MentionRequiredChats []string `json:"mention_required_chats,omitempty"`
-	AutoRespondChats     []string `json:"auto_respond_chats,omitempty"`
-	GroupAliases         string   `json:"group_aliases,omitempty"`
+	SilentChats          []string          `json:"silent_chats,omitempty"`
+	MentionRequiredChats []string          `json:"mention_required_chats,omitempty"`
+	AutoRespondChats     []string          `json:"auto_respond_chats,omitempty"`
+	GroupAliases         map[string]string `json:"group_aliases,omitempty"`
 }
 
 // FactoryWithDB returns a ChannelFactory with DB access for whatsmeow auth state.

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { ToolNameSelect } from "@/components/shared/tool-name-select";
 import { SkillNameSelect } from "@/components/shared/skill-name-select";
+import { WhatsappGroupAliasesField } from "./whatsapp-group-aliases-field";
 import type { FieldDef } from "./channel-schemas";
 
 const INHERIT = "__inherit__";
@@ -290,6 +291,16 @@ function FieldRenderer({
           />
           {help && <p className="text-xs text-muted-foreground">{help}</p>}
         </div>
+      );
+
+    case "whatsappGroupAliases":
+      return (
+        <WhatsappGroupAliasesField
+          value={value as Record<string, string> | undefined}
+          onChange={onChange}
+          label={label}
+          help={help}
+        />
       );
 
     default:

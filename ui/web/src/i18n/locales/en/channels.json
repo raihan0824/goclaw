@@ -506,5 +506,12 @@
     "relinkDevice": "Re-link Device",
     "connectedSuccess": "✅ WhatsApp connected successfully!",
     "tabQrCode": "QR Code"
+  },
+  "groupAliases": {
+    "jidPlaceholder": "Group JID (e.g. 120363...@g.us)",
+    "namePlaceholder": "Display name",
+    "addRow": "Add group",
+    "removeRow": "Remove",
+    "duplicateJid": "Duplicate JID — only the last value will be saved"
   }
 }

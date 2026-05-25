@@ -150,9 +150,9 @@ type WhatsAppConfig struct {
 
 	// GroupAliases: admin-provided display names for groups when whatsmeow's
 	// GetGroupInfo can't fetch them (just-paired, never-synced, archived, etc.).
-	// Raw textarea content — one entry per line, `JID = Display Name`. Parsed
-	// at lookup time. Overrides any name fetched from whatsmeow.
-	GroupAliases string `json:"group_aliases,omitempty"`
+	// Keyed by group JID (e.g. "120363111...@g.us") → display name. Wins over
+	// any name fetched from whatsmeow.
+	GroupAliases map[string]string `json:"group_aliases,omitempty"`
 }
 
 type ZaloConfig struct {

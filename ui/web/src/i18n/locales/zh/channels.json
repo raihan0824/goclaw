@@ -421,5 +421,12 @@
     "relinkDevice": "重新连接",
     "connectedSuccess": "✅ WhatsApp 连接成功！",
     "tabQrCode": "二维码"
+  },
+  "groupAliases": {
+    "jidPlaceholder": "群组 JID（如 120363...@g.us）",
+    "namePlaceholder": "显示名称",
+    "addRow": "添加群组",
+    "removeRow": "删除",
+    "duplicateJid": "JID 重复 — 仅保留最后一个值"
   }
 }
