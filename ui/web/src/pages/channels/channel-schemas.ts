@@ -186,7 +186,7 @@ export const configSchema: Record<string, FieldDef[]> = {
     { key: "dm_policy", label: "DM Policy", type: "select", options: dmPolicyOptions, defaultValue: "pairing" },
     { key: "group_policy", label: "Group Policy", type: "select", options: groupPolicyOptions, defaultValue: "pairing" },
     { key: "require_mention", label: "Require @Mention in Groups", type: "boolean", help: "Only respond in group chats when the bot is explicitly @mentioned" },
-    { key: "silent_chats", label: "Silent Groups", type: "tags", peerKind: "group", help: "Group JIDs (e.g. 120363...@g.us) where the bot absorbs context but never replies, even when @mentioned" },
+    { key: "silent_chats", label: "Silent Groups", type: "tags", peerKind: "group", help: "Group JIDs (e.g. 120363...@g.us) — bot never replies here, even when @mentioned. Messages still persist to the session and create episodic summaries, so the agent can recall context from these groups when chatting elsewhere with the same user." },
     { key: "mention_required_chats", label: "Mention-Required Groups", type: "tags", peerKind: "group", help: "Group JIDs where @mention is required, overriding the channel default" },
     { key: "auto_respond_chats", label: "Auto-Respond Groups", type: "tags", peerKind: "group", help: "Group JIDs where every message gets a reply, overriding the channel default" },
     { key: "allow_from", label: "Allowed Users", type: "tags", help: "WhatsApp user IDs" },

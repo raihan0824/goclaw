@@ -83,6 +83,7 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 	if historyLimit == 0 {
 		historyLimit = channels.DefaultGroupHistoryLimit
 	}
+	observeOnly := false
 	if peerKind == "group" {
 		senderLabel := evt.Info.PushName
 		if senderLabel == "" {
@@ -98,15 +99,16 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 			}, historyLimit)
 		}
 
-		// Silent-list wins over every other check. Agent never replies here —
-		// even when @mentioned — but still absorbs context for cross-chat recall.
+		// Silent-list wins over every other check. The message is published with
+		// Observe=true so the agent loop persists it into the session and fires
+		// session.completed (→ episodic summary), but skips the LLM call and
+		// outbound reply. Cross-chat recall works because episodic memory is
+		// keyed by (agent_id, user_id), not chat_id.
 		if c.isSilentChat(chatID) {
 			recordHistory()
-			slog.Debug("whatsapp silent chat — message absorbed without reply", "chat_id", chatID)
-			return
-		}
-
-		if c.requireMentionFor(chatID) {
+			observeOnly = true
+			slog.Debug("whatsapp silent chat — message will be observed (no reply)", "chat_id", chatID)
+		} else if c.requireMentionFor(chatID) {
 			if !c.isMentioned(evt) {
 				recordHistory()
 				return
@@ -170,15 +172,18 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 			metadata["user_name"], "", peerKind, "user", "", "")
 	}
 
-	// Typing indicator.
-	if prevCancel, ok := c.typingCancel.LoadAndDelete(chatID); ok {
-		if fn, ok := prevCancel.(context.CancelFunc); ok {
-			fn()
+	// Typing indicator — skip for observe-only (silent) chats so we don't
+	// hint that the agent is about to reply.
+	if !observeOnly {
+		if prevCancel, ok := c.typingCancel.LoadAndDelete(chatID); ok {
+			if fn, ok := prevCancel.(context.CancelFunc); ok {
+				fn()
+			}
 		}
+		typingCtx, typingCancel := context.WithCancel(context.Background())
+		c.typingCancel.Store(chatID, typingCancel)
+		go c.keepTyping(typingCtx, chatJID)
 	}
-	typingCtx, typingCancel := context.WithCancel(context.Background())
-	c.typingCancel.Store(chatID, typingCancel)
-	go c.keepTyping(typingCtx, chatJID)
 
 	// Derive userID from senderID.
 	userID := senderID
@@ -196,6 +201,7 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 		UserID:   userID,
 		AgentID:  c.AgentID(),
 		TenantID: c.TenantID(),
+		Observe:  observeOnly,
 		Metadata: metadata,
 	})
 

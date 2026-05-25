@@ -402,6 +402,7 @@ func processNormalMessage(
 		ToolAllow:         msg.ToolAllow,
 		ExtraSystemPrompt: extraPrompt,
 		SkillFilter:       skillFilter,
+		Observe:           msg.Observe,
 	}, scheduler.ScheduleOpts{
 		MaxConcurrent: maxConcurrent,
 	})
