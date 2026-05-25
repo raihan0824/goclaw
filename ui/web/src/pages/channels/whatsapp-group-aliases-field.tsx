@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,47 +20,71 @@ interface Row {
   name: string;
 }
 
+// rowsFromValue turns the committed map into an ordered list, appending one
+// trailing empty row so the admin can always start typing without clicking
+// "Add group" first.
+function rowsFromValue(v: Record<string, string> | undefined): Row[] {
+  const out: Row[] = [];
+  if (v) {
+    for (const [jid, name] of Object.entries(v)) {
+      out.push({ jid, name });
+    }
+  }
+  out.push({ jid: "", name: "" });
+  return out;
+}
+
+// rowsToMap serializes the editor's row list back to the map shape. Only
+// rows with both fields populated are persisted — empty rows are working
+// state, not data.
+function rowsToMap(rows: Row[]): Record<string, string> | undefined {
+  const map: Record<string, string> = {};
+  for (const r of rows) {
+    const jid = r.jid.trim();
+    const name = r.name.trim();
+    if (jid !== "" && name !== "") {
+      map[jid] = name;
+    }
+  }
+  return Object.keys(map).length > 0 ? map : undefined;
+}
+
 /**
  * Row-based editor for WhatsApp group alias map (JID → display name).
  *
- * Two columns:
- *   - Group picker (filtered to known group contacts, free-form fallback)
- *   - Display name text input
+ * The trick: rows live in **local state**, not derived from `value`. If we
+ * derived them, half-filled rows (e.g. name typed but JID still blank)
+ * would round-trip through the parent's filtered map and lose their text.
+ * The map is committed to the parent on every keystroke, but the local row
+ * list is the source of truth for what's visible.
  *
- * Empty rows are tolerated in local state but stripped on every change before
- * notifying the parent. Duplicate JIDs in the UI are flagged inline; the
- * onChange map naturally dedupes (last-write-wins) so persistence is
- * deterministic.
+ * External updates to `value` (initial load, form reset) sync into local
+ * state via the lastEmittedRef check — we only overwrite local rows when
+ * the incoming map differs from what we last emitted, so the parent's
+ * onChange echo doesn't clobber in-flight edits.
  */
 export function WhatsappGroupAliasesField({ value, onChange, label, help }: Props) {
   const { t } = useTranslation("channels");
 
-  // Convert the controlled map into an ordered row list for editing.
-  // Add one trailing empty row so the admin can always start typing.
-  const rows: Row[] = useMemo(() => {
-    const out: Row[] = [];
-    if (value) {
-      for (const [jid, name] of Object.entries(value)) {
-        out.push({ jid, name });
-      }
+  const [rows, setRows] = useState<Row[]>(() => rowsFromValue(value));
+  // Snapshot of the last map we emitted to the parent. When the parent
+  // bounces it back via `value`, we compare; only an external change (init
+  // load, reset, server hydration) should force-resync the rows.
+  const lastEmittedRef = useRef<Record<string, string> | undefined>(value);
+
+  useEffect(() => {
+    if (!mapsEqual(value, lastEmittedRef.current)) {
+      setRows(rowsFromValue(value));
+      lastEmittedRef.current = value;
     }
-    out.push({ jid: "", name: "" });
-    return out;
   }, [value]);
 
-  // Push the current row list back up as a clean map (skipping empty rows).
-  // Last value wins on duplicate JIDs — matches server-side semantics.
   const commit = useCallback(
     (next: Row[]) => {
-      const map: Record<string, string> = {};
-      for (const r of next) {
-        const jid = r.jid.trim();
-        const name = r.name.trim();
-        if (jid !== "" && name !== "") {
-          map[jid] = name;
-        }
-      }
-      onChange(Object.keys(map).length > 0 ? map : undefined);
+      setRows(next);
+      const map = rowsToMap(next);
+      lastEmittedRef.current = map;
+      onChange(map);
     },
     [onChange],
   );
@@ -75,7 +99,11 @@ export function WhatsappGroupAliasesField({ value, onChange, label, help }: Prop
 
   const removeRow = useCallback(
     (idx: number) => {
-      commit(rows.filter((_, i) => i !== idx));
+      const next = rows.filter((_, i) => i !== idx);
+      // Always keep at least one empty trailing row so the editor never
+      // shows zero inputs and force the admin to click "Add group" first.
+      if (next.length === 0) next.push({ jid: "", name: "" });
+      commit(next);
     },
     [rows, commit],
   );
@@ -84,8 +112,7 @@ export function WhatsappGroupAliasesField({ value, onChange, label, help }: Prop
     commit([...rows, { jid: "", name: "" }]);
   }, [rows, commit]);
 
-  // Detect duplicate JIDs across non-empty rows so the admin sees an inline
-  // warning before they hit save.
+  // Duplicate-JID detection across non-empty rows — inline UX warning only.
   const dupes = useMemo(() => {
     const seen = new Set<string>();
     const out = new Set<string>();
@@ -153,4 +180,21 @@ export function WhatsappGroupAliasesField({ value, onChange, label, help }: Prop
       {help && <p className="text-xs text-muted-foreground">{help}</p>}
     </div>
   );
+}
+
+// mapsEqual returns true when two maps have identical key sets and values.
+// Cheap enough for the dozen-entry max we expect on this field.
+function mapsEqual(
+  a: Record<string, string> | undefined,
+  b: Record<string, string> | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
 }
