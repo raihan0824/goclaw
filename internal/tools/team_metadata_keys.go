@@ -49,6 +49,11 @@ const (
 	// appended to the agent's system prompt so the LLM does not confuse its own
 	// platform handle for a different bot when users @mention it.
 	MetaChannelSelfIdentity = "channel_self_identity"
+	// MetaWhatsAppGroupRoster carries a JID → display-name map for groups the
+	// agent should be able to recognise by name when they appear in memory
+	// recall, session history, or any other context that stores raw chat IDs.
+	// Appended to the system prompt by the consumer.
+	MetaWhatsAppGroupRoster = "whatsapp_group_roster"
 )
 
 // Task metadata keys stored in store.TeamTaskData.Metadata.

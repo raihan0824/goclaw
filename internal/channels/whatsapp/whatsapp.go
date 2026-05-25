@@ -55,6 +55,10 @@ type Channel struct {
 	// typingCancel tracks active typing-refresh loops per chatID.
 	typingCancel sync.Map // chatID string → context.CancelFunc
 
+	// groupNames caches resolved group display names (jid → name, TTL'd).
+	// Avoids hitting whatsmeow's GetGroupInfo (network round-trip) per message.
+	groupNames *groupNameCache
+
 	// reauthMu serializes Reauth() and StartQRFlow() to prevent race when user clicks reauth rapidly.
 	reauthMu sync.Mutex
 	// pairingService, pairingDebounce, approvedGroups, groupHistory are inherited from channels.BaseChannel.
@@ -104,6 +108,7 @@ func New(cfg config.WhatsAppConfig, msgBus *bus.MessageBus,
 		container:        container,
 		audioMgr:         audioMgr,
 		builtinToolStore: builtinToolStore,
+		groupNames:       newGroupNameCache(),
 	}
 	ch.SetPairingService(pairingSvc)
 	ch.SetGroupHistory(channels.MakeHistory("whatsapp", pendingStore, base.TenantID()))
@@ -140,7 +145,38 @@ func (c *Channel) Start(ctx context.Context) error {
 	}
 
 	c.SetRunning(true)
+
+	// Seed the Contacts table with any admin-provided group aliases so the
+	// Contacts page (and the silent_chats / mention_required pickers) show
+	// names immediately, instead of waiting for the next inbound message in
+	// each aliased group. Safe to run on every Start — UpsertContactForce
+	// is idempotent.
+	c.seedGroupAliasContacts(ctx)
+
 	return nil
+}
+
+// seedGroupAliasContacts upserts a "group"-kind contact row for every entry
+// in cfg.GroupAliases. Pre-populating the contacts table means a freshly
+// saved alias appears in the admin UI without requiring a fresh inbound
+// message in the group.
+func (c *Channel) seedGroupAliasContacts(ctx context.Context) {
+	cc := c.ContactCollector()
+	if cc == nil || len(c.config.GroupAliases) == 0 {
+		return
+	}
+	// Inject tenant into ctx so the contact row lands in the right tenant
+	// (BaseChannel tracks this; defensive in case Start ctx didn't carry it).
+	ctx = store.WithTenantID(ctx, c.TenantID())
+	for jid, name := range c.config.GroupAliases {
+		if jid == "" || name == "" {
+			continue
+		}
+		cc.UpsertContactForce(ctx, c.Type(), c.Name(), jid, jid,
+			name, "", "group", "group", "", "")
+	}
+	slog.Info("whatsapp: seeded group alias contacts",
+		"channel", c.Name(), "count", len(c.config.GroupAliases))
 }
 
 // BlockReplyEnabled returns the per-channel block_reply override (nil = inherit gateway default).

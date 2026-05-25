@@ -42,6 +42,15 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		Payload: map[string]any{"message": req.Message},
 	})
 
+	// Observe-only short-circuit. Persist the user message into the session and
+	// fire session.completed (so episodic summarisation still runs), then exit.
+	// No LLM call, no tool execution, no outbound — used by per-chat silent
+	// overrides (e.g. WhatsApp silent_chats) so the agent absorbs passive
+	// context for cross-chat recall without ever replying in the source chat.
+	if req.Observe {
+		return l.runObserve(ctx, req, emitRun)
+	}
+
 	// Create trace
 	var traceID uuid.UUID
 	isChildTrace := req.ParentTraceID != uuid.Nil && l.traceCollector != nil

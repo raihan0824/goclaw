@@ -30,7 +30,12 @@ type InboundMessage struct {
 	UserID       string            `json:"user_id,omitempty"`       // external user ID for per-user scoping (memory, bootstrap)
 	HistoryLimit int               `json:"history_limit,omitempty"` // max turns to keep in context (0=unlimited, from channel config)
 	ToolAllow    []string          `json:"tool_allow,omitempty"`    // per-group tool allow list (nil = no restriction)
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	// Observe — when true, persist the message into the session and fire
+	// session.completed (so episodic summarisation runs), but skip the LLM
+	// call and any outbound reply. Used by per-chat "silent" overrides so
+	// the agent can absorb context from passive groups for cross-chat recall.
+	Observe  bool              `json:"observe,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // OutboundMessage represents a message to be sent to a channel.

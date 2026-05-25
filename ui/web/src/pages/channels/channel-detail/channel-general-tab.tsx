@@ -20,6 +20,11 @@ import { channelTypeLabels } from "../channels-status-view";
 const ESSENTIAL_CONFIG_KEYS: Record<string, string[]> = {
   _default: ["dm_policy", "group_policy", "require_mention"],
   telegram: ["dm_policy", "group_policy", "mention_mode", "require_mention"],
+  whatsapp: [
+    "dm_policy", "group_policy", "require_mention",
+    "silent_chats", "mention_required_chats", "auto_respond_chats",
+    "group_aliases",
+  ],
 };
 
 interface ChannelGeneralTabProps {
@@ -56,10 +61,37 @@ export function ChannelGeneralTab({ instance, agents, onUpdate }: ChannelGeneral
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Merge policy values into existing config, preserving other keys (groups, advanced)
-      const cleanPolicies = Object.fromEntries(
-        Object.entries(policyValues).filter(([, v]) => v !== undefined && v !== "" && v !== null),
-      );
+      // Translate cleared fields into explicit empty values so the JSONB merge
+      // actually overwrites the previous content. If we just dropped undefined
+      // entries, the spread below would keep the existing array on the server
+      // and the user's "remove all" would silently fail to persist.
+      //
+      //   tags                  cleared → []
+      //   whatsappGroupAliases  cleared → {}
+      //   anything else         cleared → null  (backend deserialisers tolerate it)
+      const cleanPolicies: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(policyValues)) {
+        const isCleared =
+          v === undefined ||
+          v === null ||
+          v === "" ||
+          (Array.isArray(v) && v.length === 0);
+        if (!isCleared) {
+          cleanPolicies[k] = v;
+          continue;
+        }
+        const field = allConfigFields.find((f) => f.key === k);
+        switch (field?.type) {
+          case "tags":
+            cleanPolicies[k] = [];
+            break;
+          case "whatsappGroupAliases":
+            cleanPolicies[k] = {};
+            break;
+          default:
+            cleanPolicies[k] = null;
+        }
+      }
       const mergedConfig = { ...existingConfig, ...cleanPolicies };
       await onUpdate({
         display_name: displayName || null,

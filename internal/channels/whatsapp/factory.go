@@ -14,12 +14,16 @@ import (
 
 // whatsappInstanceConfig maps the non-secret config JSONB from the channel_instances table.
 type whatsappInstanceConfig struct {
-	DMPolicy       string   `json:"dm_policy,omitempty"`
-	GroupPolicy    string   `json:"group_policy,omitempty"`
-	RequireMention *bool    `json:"require_mention,omitempty"`
-	HistoryLimit   int      `json:"history_limit,omitempty"`
-	AllowFrom      []string `json:"allow_from,omitempty"`
-	BlockReply     *bool    `json:"block_reply,omitempty"`
+	DMPolicy             string   `json:"dm_policy,omitempty"`
+	GroupPolicy          string   `json:"group_policy,omitempty"`
+	RequireMention       *bool    `json:"require_mention,omitempty"`
+	HistoryLimit         int      `json:"history_limit,omitempty"`
+	AllowFrom            []string `json:"allow_from,omitempty"`
+	BlockReply           *bool    `json:"block_reply,omitempty"`
+	SilentChats          []string          `json:"silent_chats,omitempty"`
+	MentionRequiredChats []string          `json:"mention_required_chats,omitempty"`
+	AutoRespondChats     []string          `json:"auto_respond_chats,omitempty"`
+	GroupAliases         map[string]string `json:"group_aliases,omitempty"`
 }
 
 // FactoryWithDB returns a ChannelFactory with DB access for whatsmeow auth state.
@@ -59,13 +63,17 @@ func FactoryWithDBAudio(db *sql.DB, pendingStore store.PendingMessageStore, dial
 		}
 
 		waCfg := config.WhatsAppConfig{
-			Enabled:        true,
-			AllowFrom:      ic.AllowFrom,
-			DMPolicy:       ic.DMPolicy,
-			GroupPolicy:    ic.GroupPolicy,
-			RequireMention: ic.RequireMention,
-			HistoryLimit:   ic.HistoryLimit,
-			BlockReply:     ic.BlockReply,
+			Enabled:              true,
+			AllowFrom:            ic.AllowFrom,
+			DMPolicy:             ic.DMPolicy,
+			GroupPolicy:          ic.GroupPolicy,
+			RequireMention:       ic.RequireMention,
+			HistoryLimit:         ic.HistoryLimit,
+			BlockReply:           ic.BlockReply,
+			SilentChats:          ic.SilentChats,
+			MentionRequiredChats: ic.MentionRequiredChats,
+			AutoRespondChats:     ic.AutoRespondChats,
+			GroupAliases:         ic.GroupAliases,
 		}
 		// DB instances default to "pairing" for groups (secure by default).
 		if waCfg.GroupPolicy == "" {

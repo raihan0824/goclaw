@@ -140,6 +140,19 @@ type WhatsAppConfig struct {
 	RequireMention *bool               `json:"require_mention,omitempty"` // only respond in groups when bot is @mentioned (default false)
 	HistoryLimit   int                 `json:"history_limit,omitempty"`   // max pending group messages for context (default 200, 0=disabled)
 	BlockReply     *bool               `json:"block_reply,omitempty"`     // override gateway block_reply (nil = inherit)
+
+	// Per-chat behavior overrides — lists of group JIDs (e.g. "120363111...@g.us").
+	// Resolution order at inbound: SilentChats wins, then MentionRequiredChats /
+	// AutoRespondChats override the channel-wide RequireMention default.
+	SilentChats          FlexibleStringSlice `json:"silent_chats,omitempty"`           // absorb context only; never reply, even when @mentioned
+	MentionRequiredChats FlexibleStringSlice `json:"mention_required_chats,omitempty"` // force @mention requirement here regardless of RequireMention
+	AutoRespondChats     FlexibleStringSlice `json:"auto_respond_chats,omitempty"`     // always respond here regardless of RequireMention
+
+	// GroupAliases: admin-provided display names for groups when whatsmeow's
+	// GetGroupInfo can't fetch them (just-paired, never-synced, archived, etc.).
+	// Keyed by group JID (e.g. "120363111...@g.us") → display name. Wins over
+	// any name fetched from whatsmeow.
+	GroupAliases map[string]string `json:"group_aliases,omitempty"`
 }
 
 type ZaloConfig struct {

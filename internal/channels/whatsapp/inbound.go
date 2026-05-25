@@ -15,6 +15,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/media"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
 const emptyMessageSentinel = "[empty message]"
@@ -83,13 +84,13 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 	if historyLimit == 0 {
 		historyLimit = channels.DefaultGroupHistoryLimit
 	}
-	if peerKind == "group" && c.config.RequireMention != nil && *c.config.RequireMention {
-		if !c.isMentioned(evt) {
-			// Not mentioned — record for context and skip.
-			senderLabel := evt.Info.PushName
-			if senderLabel == "" {
-				senderLabel = senderID
-			}
+	observeOnly := false
+	if peerKind == "group" {
+		senderLabel := evt.Info.PushName
+		if senderLabel == "" {
+			senderLabel = senderID
+		}
+		recordHistory := func() {
 			c.GroupHistory().Record(chatID, channels.HistoryEntry{
 				Sender:    senderLabel,
 				SenderID:  senderID,
@@ -97,11 +98,26 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 				Timestamp: evt.Info.Timestamp,
 				MessageID: string(evt.Info.ID),
 			}, historyLimit)
-			return
 		}
-		// Mentioned — prepend accumulated group context.
-		content = c.GroupHistory().BuildContext(chatID, content, historyLimit)
-		c.GroupHistory().Clear(chatID)
+
+		// Silent-list wins over every other check. The message is published with
+		// Observe=true so the agent loop persists it into the session and fires
+		// session.completed (→ episodic summary), but skips the LLM call and
+		// outbound reply. Cross-chat recall works because episodic memory is
+		// keyed by (agent_id, user_id), not chat_id.
+		if c.isSilentChat(chatID) {
+			recordHistory()
+			observeOnly = true
+			slog.Debug("whatsapp silent chat — message will be observed (no reply)", "chat_id", chatID)
+		} else if c.requireMentionFor(chatID) {
+			if !c.isMentioned(evt) {
+				recordHistory()
+				return
+			}
+			// Mentioned — prepend accumulated group context.
+			content = c.GroupHistory().BuildContext(chatID, content, historyLimit)
+			c.GroupHistory().Clear(chatID)
+		}
 	}
 
 	metadata := map[string]string{
@@ -109,6 +125,36 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 	}
 	if evt.Info.PushName != "" {
 		metadata["user_name"] = evt.Info.PushName
+	}
+
+	// Group display name — resolved via cached whatsmeow.GetGroupInfo.
+	// Empty string means "unknown" (group not fetched yet / network blip);
+	// the agent's system prompt falls back to chat ID in that case.
+	groupName := ""
+	if peerKind == "group" {
+		groupName = c.resolveGroupName(ctx, chatJID)
+		if groupName != "" {
+			metadata[tools.MetaChatTitle] = groupName
+		}
+	}
+	// Roster of every known group so the agent can resolve JIDs it encounters
+	// in memory recall / session history / cross-group questions. Includes the
+	// admin-configured aliases plus the auto-resolved name of the current chat
+	// (in case the admin hasn't aliased it yet). Format is a plain text block
+	// "JID = Name" per line, parsed visually by the LLM.
+	if peerKind == "group" {
+		roster := c.buildGroupRoster(ctx, groupName, chatID)
+		if roster != "" {
+			metadata[tools.MetaWhatsAppGroupRoster] = roster
+		}
+		// Visibility: confirm the roster the agent will see for this turn.
+		// Lines = number of known groups (header + one per entry, minus 1).
+		slog.Debug("whatsapp group roster built",
+			"chat_id", chatID,
+			"current_name", groupName,
+			"aliases_configured", len(c.config.GroupAliases),
+			"roster_bytes", len(roster),
+		)
 	}
 
 	// STT: transcribe audio items (opt-in via builtin_tools[stt].settings.whatsapp_enabled,
@@ -155,17 +201,28 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 	if cc := c.ContactCollector(); cc != nil {
 		cc.EnsureContact(ctx, c.Type(), c.Name(), senderID, senderID,
 			metadata["user_name"], "", peerKind, "user", "", "")
-	}
-
-	// Typing indicator.
-	if prevCancel, ok := c.typingCancel.LoadAndDelete(chatID); ok {
-		if fn, ok := prevCancel.(context.CancelFunc); ok {
-			fn()
+		// Group contact: skip when groupName is empty (don't poison the seen
+		// cache with an unnamed row that would block refresh for 30 min). Use
+		// the Force variant so a previously-empty row gets updated as soon as
+		// whatsmeow returns the real name on a later message.
+		if peerKind == "group" && groupName != "" {
+			cc.UpsertContactForce(ctx, c.Type(), c.Name(), chatID, chatID,
+				groupName, "", "group", "group", "", "")
 		}
 	}
-	typingCtx, typingCancel := context.WithCancel(context.Background())
-	c.typingCancel.Store(chatID, typingCancel)
-	go c.keepTyping(typingCtx, chatJID)
+
+	// Typing indicator — skip for observe-only (silent) chats so we don't
+	// hint that the agent is about to reply.
+	if !observeOnly {
+		if prevCancel, ok := c.typingCancel.LoadAndDelete(chatID); ok {
+			if fn, ok := prevCancel.(context.CancelFunc); ok {
+				fn()
+			}
+		}
+		typingCtx, typingCancel := context.WithCancel(context.Background())
+		c.typingCancel.Store(chatID, typingCancel)
+		go c.keepTyping(typingCtx, chatJID)
+	}
 
 	// Derive userID from senderID.
 	userID := senderID
@@ -183,6 +240,7 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 		UserID:   userID,
 		AgentID:  c.AgentID(),
 		TenantID: c.TenantID(),
+		Observe:  observeOnly,
 		Metadata: metadata,
 	})
 

@@ -4,7 +4,7 @@
 export interface FieldDef {
   key: string;
   label: string;
-  type: "text" | "password" | "number" | "boolean" | "select" | "tags" | "tristate" | "textarea" | "tool-select" | "skill-select";
+  type: "text" | "password" | "number" | "boolean" | "select" | "tags" | "tristate" | "textarea" | "tool-select" | "skill-select" | "whatsappGroupAliases";
   placeholder?: string;
   required?: boolean;
   defaultValue?: string | number | boolean | string[];
@@ -16,6 +16,8 @@ export interface FieldDef {
   disabledWhen?: { key: string; value: string; hint?: string };
   /** Hide in an "Advanced" collapsible section — for rarely-needed fields */
   advanced?: boolean;
+  /** For type=tags, restrict the picker dropdown to contacts of this peer_kind. */
+  peerKind?: "direct" | "group";
 }
 
 // --- Shared option lists ---
@@ -184,6 +186,10 @@ export const configSchema: Record<string, FieldDef[]> = {
     { key: "dm_policy", label: "DM Policy", type: "select", options: dmPolicyOptions, defaultValue: "pairing" },
     { key: "group_policy", label: "Group Policy", type: "select", options: groupPolicyOptions, defaultValue: "pairing" },
     { key: "require_mention", label: "Require @Mention in Groups", type: "boolean", help: "Only respond in group chats when the bot is explicitly @mentioned" },
+    { key: "silent_chats", label: "Silent Groups", type: "tags", peerKind: "group", help: "Group JIDs (e.g. 120363...@g.us) — bot never replies here, even when @mentioned. Messages still persist to the session and create episodic summaries, so the agent can recall context from these groups when chatting elsewhere with the same user." },
+    { key: "mention_required_chats", label: "Mention-Required Groups", type: "tags", peerKind: "group", help: "Group JIDs where @mention is required, overriding the channel default" },
+    { key: "auto_respond_chats", label: "Auto-Respond Groups", type: "tags", peerKind: "group", help: "Group JIDs where every message gets a reply, overriding the channel default" },
+    { key: "group_aliases", label: "Group Display Names (manual)", type: "whatsappGroupAliases", help: "Override or supply names when WhatsApp can't fetch them automatically. Wins over any auto-fetched name." },
     { key: "allow_from", label: "Allowed Users", type: "tags", help: "WhatsApp user IDs" },
     { key: "block_reply", label: "Block Reply", type: "select", options: blockReplyOptions, defaultValue: "inherit", help: "Deliver intermediate text during tool iterations" },
   ],

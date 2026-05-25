@@ -611,6 +611,13 @@ type RunRequest struct {
 	ModelOverride     string             // per-request model override (heartbeat uses cheaper model)
 	ProviderOverride  providers.Provider // per-request provider override (heartbeat uses different provider)
 	LightContext      bool               // skip loading context files (only inject ExtraSystemPrompt)
+	// Observe — when true, the loop persists the user message into the session
+	// and emits session.completed (so episodic summarisation still runs), but
+	// skips the LLM call, tool execution, and outbound reply. Used by per-chat
+	// silent overrides so the agent absorbs passive group context without
+	// replying. Memory is keyed by (agent_id, user_id), so the captured
+	// summary is recallable in any later chat with the same user.
+	Observe bool
 
 	// Run classification
 	RunKind       string // "delegation", "announce" — empty for user-initiated runs
