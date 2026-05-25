@@ -15,6 +15,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/media"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
 const emptyMessageSentinel = "[empty message]"
@@ -126,6 +127,17 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 		metadata["user_name"] = evt.Info.PushName
 	}
 
+	// Group display name — resolved via cached whatsmeow.GetGroupInfo.
+	// Empty string means "unknown" (group not fetched yet / network blip);
+	// the agent's system prompt falls back to chat ID in that case.
+	groupName := ""
+	if peerKind == "group" {
+		groupName = c.resolveGroupName(ctx, chatJID)
+		if groupName != "" {
+			metadata[tools.MetaChatTitle] = groupName
+		}
+	}
+
 	// STT: transcribe audio items (opt-in via builtin_tools[stt].settings.whatsapp_enabled,
 	// default false per Decision 6 — enabling breaks E2E encryption for voice messages).
 	waSttSettings := c.loadSTTSettings(ctx)
@@ -170,6 +182,12 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 	if cc := c.ContactCollector(); cc != nil {
 		cc.EnsureContact(ctx, c.Type(), c.Name(), senderID, senderID,
 			metadata["user_name"], "", peerKind, "user", "", "")
+		// Also upsert a group-kind contact so the admin UI picker can show
+		// the human-readable group name instead of the bare JID.
+		if peerKind == "group" {
+			cc.EnsureContact(ctx, c.Type(), c.Name(), chatID, chatID,
+				groupName, "", "group", "group", "", "")
+		}
 	}
 
 	// Typing indicator — skip for observe-only (silent) chats so we don't

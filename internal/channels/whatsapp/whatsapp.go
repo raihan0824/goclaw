@@ -55,6 +55,10 @@ type Channel struct {
 	// typingCancel tracks active typing-refresh loops per chatID.
 	typingCancel sync.Map // chatID string → context.CancelFunc
 
+	// groupNames caches resolved group display names (jid → name, TTL'd).
+	// Avoids hitting whatsmeow's GetGroupInfo (network round-trip) per message.
+	groupNames *groupNameCache
+
 	// reauthMu serializes Reauth() and StartQRFlow() to prevent race when user clicks reauth rapidly.
 	reauthMu sync.Mutex
 	// pairingService, pairingDebounce, approvedGroups, groupHistory are inherited from channels.BaseChannel.
@@ -104,6 +108,7 @@ func New(cfg config.WhatsAppConfig, msgBus *bus.MessageBus,
 		container:        container,
 		audioMgr:         audioMgr,
 		builtinToolStore: builtinToolStore,
+		groupNames:       newGroupNameCache(),
 	}
 	ch.SetPairingService(pairingSvc)
 	ch.SetGroupHistory(channels.MakeHistory("whatsapp", pendingStore, base.TenantID()))
