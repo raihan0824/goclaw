@@ -150,6 +150,15 @@ func wireExtraTools(
 			}
 		}
 	}
+	// Wire ContactStore on sessions_list so it can enrich entries with chat_name
+	// (resolves WhatsApp group JIDs / user JIDs into display names).
+	if t, ok := toolsReg.Get("sessions_list"); ok {
+		if csa, ok := t.(interface {
+			SetContactStore(store.ContactStore)
+		}); ok && pgStores.Contacts != nil {
+			csa.SetContactStore(pgStores.Contacts)
+		}
+	}
 	// Wire BusAware on message tool
 	if t, ok := toolsReg.Get("message"); ok {
 		if ba, ok := t.(tools.BusAware); ok {

@@ -16,11 +16,13 @@ import (
 
 type SessionsListTool struct {
 	sessions store.SessionStore
+	contacts store.ContactStore // optional: enriches output with chat_name from contacts table
 }
 
 func NewSessionsListTool() *SessionsListTool { return &SessionsListTool{} }
 
 func (t *SessionsListTool) SetSessionStore(s store.SessionStore) { t.sessions = s }
+func (t *SessionsListTool) SetContactStore(s store.ContactStore) { t.contacts = s }
 
 func (t *SessionsListTool) Name() string { return "sessions_list" }
 func (t *SessionsListTool) Description() string {
@@ -96,14 +98,30 @@ func (t *SessionsListTool) Execute(ctx context.Context, args map[string]any) *Re
 
 	type sessionEntry struct {
 		Key          string `json:"key"`
+		ChatName     string `json:"chat_name,omitempty"` // resolved from contacts table when available
 		MessageCount int    `json:"message_count"`
 		Updated      string `json:"updated"`
+	}
+
+	// Build a senderID → display_name map once so we can decorate each entry
+	// without N round trips. ContactStore lookup is tenant-scoped via ctx.
+	// On failure, just skip enrichment — the JID key is still informative.
+	nameByJID := map[string]string{}
+	if t.contacts != nil {
+		if contacts, err := t.contacts.ListContacts(ctx, store.ContactListOpts{Limit: 500}); err == nil {
+			for _, c := range contacts {
+				if c.DisplayName != nil && *c.DisplayName != "" {
+					nameByJID[c.SenderID] = *c.DisplayName
+				}
+			}
+		}
 	}
 
 	entries := make([]sessionEntry, 0, len(sessions))
 	for _, s := range sessions {
 		entries = append(entries, sessionEntry{
 			Key:          s.Key,
+			ChatName:     resolveChatName(s.Key, nameByJID),
 			MessageCount: s.MessageCount,
 			Updated:      s.Updated.Format(time.RFC3339),
 		})
@@ -114,6 +132,36 @@ func (t *SessionsListTool) Execute(ctx context.Context, args map[string]any) *Re
 		"sessions": entries,
 	})
 	return SilentResult(string(out))
+}
+
+// resolveChatName extracts the chat ID from a canonical session key and looks
+// up its display name. Returns empty string when the key doesn't carry a
+// channel chat ID (e.g. subagent / cron / heartbeat sessions) or no contact
+// row exists yet.
+//
+// Session key shapes (sessions/key.go):
+//   agent:{agentKey}:{channel}:{direct|group}:{chatID}
+//   agent:{agentKey}:{channel}:group:{chatID}:topic:{topicID}
+//   agent:{agentKey}:ws:direct:{conversationUUID}      ← no real contact
+//   agent:{agentKey}:subagent:{label}                  ← no contact
+//   agent:{agentKey}:cron:{jobID}                      ← no contact
+func resolveChatName(sessionKey string, nameByJID map[string]string) string {
+	parts := strings.Split(sessionKey, ":")
+	// Need at least: agent | key | channel | kind | chatID  → 5 parts
+	if len(parts) < 5 {
+		return ""
+	}
+	kind := parts[3]
+	if kind != "direct" && kind != "group" {
+		return ""
+	}
+	chatID := parts[4]
+	// For forum topics the JID may be followed by ":topic:{id}" — strip it.
+	if len(parts) >= 7 && parts[5] == "topic" {
+		// chatID is already the bare JID at parts[4], topic id is parts[6]
+		// (Names map keys to the group JID, not topic-suffixed.)
+	}
+	return nameByJID[chatID]
 }
 
 // ============================================================
