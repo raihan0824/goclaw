@@ -1,0 +1,123 @@
+{
+  "title": "Webhooks",
+  "description": "HTTP endpoints for inbound LLM invocations and channel-message delivery.",
+  "addWebhook": "Create webhook",
+  "searchPlaceholder": "Search webhooks...",
+  "emptyTitle": "No webhooks",
+  "emptyDescription": "Create a webhook to expose an HMAC-signed endpoint.",
+  "notFound": "Webhook not found",
+  "neverUsed": "Never used",
+  "columns": {
+    "name": "Name",
+    "kind": "Kind",
+    "status": "Status",
+    "lastUsed": "Last used",
+    "actions": "Actions"
+  },
+  "status": {
+    "active": "Active",
+    "revoked": "Revoked",
+    "queued": "Queued",
+    "running": "Running",
+    "done": "Done",
+    "failed": "Failed",
+    "dead": "Dead"
+  },
+  "kind": {
+    "llm": "LLM",
+    "message": "Message"
+  },
+  "kindHint": {
+    "llm": "Invokes an agent. Returns the response synchronously (≤30s) or queues an async delivery with a callback_url.",
+    "message": "Delivers a payload to a bound channel (Telegram, WhatsApp, Discord, ...). Requires a channel."
+  },
+  "actions": {
+    "rotate": "Rotate secret"
+  },
+  "form": {
+    "title": "Create webhook",
+    "description": "The secret is shown only once after creation.",
+    "name": "Name",
+    "namePlaceholder": "e.g. zapier-ingest, ops-bot",
+    "kind": "Kind",
+    "agentId": "Agent ID (optional)",
+    "agentIdPlaceholder": "UUID — bind this webhook to a specific agent",
+    "channelId": "Channel",
+    "channelIdPlaceholder": "Select a channel instance",
+    "noChannels": "No channel instances configured",
+    "rateLimit": "Rate limit (per minute)",
+    "rateLimitHint": "0 = unlimited.",
+    "ipAllowlist": "IP allowlist",
+    "requireHmac": "Require HMAC signature",
+    "requireHmacHint": "Reject requests without a valid X-Webhook-Signature header.",
+    "localhostOnly": "Localhost only",
+    "localhostOnlyHint": "Accept requests from 127.0.0.1 / ::1 only.",
+    "create": "Create",
+    "creating": "Creating..."
+  },
+  "secret": {
+    "tokenLabel": "Webhook token",
+    "hmacLabel": "HMAC signing key",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "acknowledge": "I have saved this secret",
+    "done": "Done"
+  },
+  "created": {
+    "title": "Webhook created",
+    "description": "Copy the secret now — it will not be shown again."
+  },
+  "rotated": {
+    "title": "Secret rotated",
+    "description": "The previous secret stopped working immediately. Copy the new one now."
+  },
+  "rotate": {
+    "title": "Rotate secret",
+    "description": "Rotating will invalidate the current secret immediately. Any client using it will start failing."
+  },
+  "revoke": {
+    "title": "Revoke webhook",
+    "description": "Revoke \"{{name}}\"? This cannot be undone.",
+    "confirmLabel": "Revoke"
+  },
+  "tabs": {
+    "settings": "Settings",
+    "deliveries": "Deliveries"
+  },
+  "settings": {
+    "kind": "Kind",
+    "secretPrefix": "Secret prefix",
+    "id": "ID",
+    "save": "Save",
+    "saving": "Saving...",
+    "discard": "Discard"
+  },
+  "deliveries": {
+    "empty": "No deliveries recorded",
+    "filterStatus": "Status",
+    "statusAll": "All",
+    "prev": "Previous",
+    "next": "Next",
+    "range": "{{from}}-{{to}}",
+    "columns": {
+      "deliveryId": "Delivery",
+      "status": "Status",
+      "mode": "Mode",
+      "attempts": "Attempts",
+      "callback": "Callback URL",
+      "lastError": "Last error",
+      "created": "Created",
+      "completed": "Completed"
+    }
+  },
+  "toast": {
+    "created": "Webhook created",
+    "updated": "Webhook updated",
+    "rotated": "Secret rotated",
+    "revoked": "Webhook revoked",
+    "failedCreate": "Failed to create webhook",
+    "failedUpdate": "Failed to update webhook",
+    "failedRotate": "Failed to rotate secret",
+    "failedRevoke": "Failed to revoke webhook"
+  }
+}

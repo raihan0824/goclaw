@@ -56,6 +56,12 @@ export const queryKeys = {
     detail: (id: string) => ["hooks", id] as const,
     history: (id: string) => ["hooks", id, "history"] as const,
   },
+  webhooks: {
+    all: ["webhooks"] as const,
+    detail: (id: string) => ["webhooks", id] as const,
+    deliveries: (id: string, params: Record<string, unknown>) =>
+      ["webhooks", id, "deliveries", params] as const,
+  },
   builtinTools: {
     all: ["builtinTools"] as const,
   },

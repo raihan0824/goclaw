@@ -30,6 +30,7 @@ import {
   FileArchive,
   DatabaseBackup,
   Webhook,
+  Send,
   MonitorCog,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -137,6 +138,7 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
           )}
           <SidebarItem to={ROUTES.PROVIDERS} icon={Cpu} label={t("nav.providers")} collapsed={collapsed} />
           <SidebarItem to={ROUTES.API_KEYS} icon={KeyRound} label={t("nav.apiKeys")} collapsed={collapsed} />
+          <SidebarItem to={ROUTES.WEBHOOKS} icon={Send} label={t("nav.webhooks")} collapsed={collapsed} />
           <SidebarItem to={ROUTES.PACKAGES} icon={Blocks} label={t("nav.packages")} collapsed={collapsed} />
           {isOwner && (
             <SidebarItem to={ROUTES.CONFIG} icon={Settings} label={t("nav.config")} collapsed={collapsed} />
