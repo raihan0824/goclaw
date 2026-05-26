@@ -483,7 +483,6 @@ func (s *Server) SetWebhooksAdminHandler(h *httpapi.WebhooksAdminHandler) {
 }
 
 // SetWebhookMessageHandler registers the POST /v1/webhooks/message runtime handler.
-// Only called when edition.Current().AllowsChannels() is true (Standard edition).
 func (s *Server) SetWebhookMessageHandler(h *httpapi.WebhookMessageHandler) {
 	s.handlers = append(s.handlers, h)
 }

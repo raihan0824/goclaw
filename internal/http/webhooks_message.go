@@ -30,7 +30,6 @@ type channelDispatcher interface {
 }
 
 // WebhookMessageHandler handles POST /v1/webhooks/message.
-// Standard edition only — mount via edition.Current().AllowsChannels() gate.
 // Auth is enforced by WebhookAuthMiddleware (phase 03) with kind="message".
 type WebhookMessageHandler struct {
 	channelMgr       channelDispatcher
@@ -65,7 +64,6 @@ func (h *WebhookMessageHandler) SetEncKey(encKey string) {
 }
 
 // RegisterRoutes mounts POST /v1/webhooks/message wrapped in the auth middleware.
-// Only call when edition.Current().AllowsChannels() — callers enforce the gate.
 func (h *WebhookMessageHandler) RegisterRoutes(mux *http.ServeMux) {
 	authMW := WebhookAuthMiddleware(
 		h.webhooks,

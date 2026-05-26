@@ -7,13 +7,13 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/crypto"
-	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -36,15 +36,18 @@ var webhookKinds = map[string]bool{
 // is stored as "" and HMAC auth requires rotation before it can be used.
 type WebhooksAdminHandler struct {
 	webhooks store.WebhookStore
+	calls    store.WebhookCallStore
 	tenants  store.TenantStore
 	msgBus   *bus.MessageBus
 	encKey   string // AES-256-GCM key for encrypting raw webhook secrets at rest
 }
 
 // NewWebhooksAdminHandler creates a handler for webhook admin endpoints.
-func NewWebhooksAdminHandler(webhooks store.WebhookStore, tenants store.TenantStore, msgBus *bus.MessageBus) *WebhooksAdminHandler {
+// calls may be nil — the /calls delivery-history route is only registered when non-nil.
+func NewWebhooksAdminHandler(webhooks store.WebhookStore, calls store.WebhookCallStore, tenants store.TenantStore, msgBus *bus.MessageBus) *WebhooksAdminHandler {
 	return &WebhooksAdminHandler{
 		webhooks: webhooks,
+		calls:    calls,
 		tenants:  tenants,
 		msgBus:   msgBus,
 	}
@@ -57,9 +60,6 @@ func (h *WebhooksAdminHandler) SetEncKey(encKey string) {
 }
 
 // RegisterRoutes registers all webhook admin routes on mux.
-// Admin CRUD routes mount for both editions.
-// Runtime routes (/v1/webhooks/message, /v1/webhooks/llm) are mounted by phases 05/06
-// conditionally: message-kind only if edition.Current().AllowsChannels().
 func (h *WebhooksAdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/webhooks", h.requireAdmin(h.handleCreate))
 	mux.HandleFunc("GET /v1/webhooks", h.requireAdmin(h.handleList))
@@ -67,6 +67,9 @@ func (h *WebhooksAdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /v1/webhooks/{id}", h.requireAdmin(h.handleUpdate))
 	mux.HandleFunc("POST /v1/webhooks/{id}/rotate", h.requireAdmin(h.handleRotate))
 	mux.HandleFunc("DELETE /v1/webhooks/{id}", h.requireAdmin(h.handleRevoke))
+	if h.calls != nil {
+		mux.HandleFunc("GET /v1/webhooks/{id}/calls", h.requireAdmin(h.handleListCalls))
+	}
 }
 
 func (h *WebhooksAdminHandler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
@@ -157,17 +160,6 @@ func (h *WebhooksAdminHandler) handleCreate(w http.ResponseWriter, r *http.Reque
 	if !webhookKinds[req.Kind] {
 		writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgInvalidRequest, "kind must be 'llm' or 'message'"))
 		return
-	}
-
-	// Edition gate: message kind requires channels edition.
-	if req.Kind == "message" && !edition.Current().AllowsChannels() {
-		writeError(w, http.StatusForbidden, protocol.ErrUnauthorized, i18n.T(locale, i18n.MsgInvalidRequest, "message webhooks require Standard edition"))
-		return
-	}
-
-	// Lite edition: force localhost_only=true for all webhook kinds.
-	if !edition.Current().AllowsChannels() {
-		req.LocalhostOnly = true
 	}
 
 	raw, secretHash, secretPrefix, err := generateWebhookSecret()
@@ -385,11 +377,6 @@ func (h *WebhooksAdminHandler) handleUpdate(w http.ResponseWriter, r *http.Reque
 		updates["require_hmac"] = *req.RequireHMAC
 	}
 	if req.LocalhostOnly != nil {
-		// Lite edition: cannot unset localhost_only.
-		if !*req.LocalhostOnly && !edition.Current().AllowsChannels() {
-			writeError(w, http.StatusForbidden, protocol.ErrUnauthorized, i18n.T(locale, i18n.MsgInvalidRequest, "localhost_only cannot be disabled on Lite edition"))
-			return
-		}
 		updates["localhost_only"] = *req.LocalhostOnly
 	}
 
@@ -530,6 +517,142 @@ func (h *WebhooksAdminHandler) handleRevoke(w http.ResponseWriter, r *http.Reque
 	h.emitCacheInvalidate(id.String())
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+// --- List Calls (delivery history) ---
+
+// webhookCallSummary is the public response shape for /v1/webhooks/{id}/calls.
+// Omits request_payload, response, and lease_token — those are large/internal.
+type webhookCallSummary struct {
+	ID            uuid.UUID  `json:"id"`
+	DeliveryID    uuid.UUID  `json:"delivery_id"`
+	Status        string     `json:"status"`
+	Mode          string     `json:"mode"`
+	Attempts      int        `json:"attempts"`
+	CallbackURL   *string    `json:"callback_url,omitempty"`
+	LastError     *string    `json:"last_error,omitempty"`
+	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+type webhookCallsPageResp struct {
+	Items   []webhookCallSummary `json:"items"`
+	Limit   int                  `json:"limit"`
+	Offset  int                  `json:"offset"`
+	HasMore bool                 `json:"has_more"`
+}
+
+var webhookCallStatusSet = map[string]bool{
+	"queued":  true,
+	"running": true,
+	"done":    true,
+	"failed":  true,
+	"dead":    true,
+}
+
+func (h *WebhooksAdminHandler) handleListCalls(w http.ResponseWriter, r *http.Request) {
+	locale := extractLocale(r)
+
+	if !requireTenantAdmin(w, r, h.tenants) {
+		slog.Warn("security.webhook.admin_denied", "action", "list_calls", "path", r.URL.Path,
+			"user_id", store.UserIDFromContext(r.Context()))
+		return
+	}
+
+	id, ok := parseWebhookID(w, r, locale)
+	if !ok {
+		return
+	}
+
+	ctx := r.Context()
+
+	// Verify parent webhook ownership first — otherwise we'd leak existence
+	// by silently returning zero rows for an unknown/cross-tenant id.
+	wh, err := h.webhooks.GetByID(ctx, id)
+	if err != nil || wh == nil {
+		writeError(w, http.StatusNotFound, protocol.ErrNotFound, i18n.T(locale, i18n.MsgNotFound, "webhook", id.String()))
+		return
+	}
+	tenantID := store.TenantIDFromContext(ctx)
+	if !store.IsOwnerRole(ctx) && wh.TenantID != tenantID {
+		writeError(w, http.StatusNotFound, protocol.ErrNotFound, i18n.T(locale, i18n.MsgNotFound, "webhook", id.String()))
+		return
+	}
+
+	q := r.URL.Query()
+	status := q.Get("status")
+	if status != "" && !webhookCallStatusSet[status] {
+		writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgInvalidRequest, "status must be one of queued|running|done|failed|dead"))
+		return
+	}
+
+	limit := 50
+	if s := q.Get("limit"); s != "" {
+		v, perr := strconv.Atoi(s)
+		if perr != nil || v < 1 {
+			writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgInvalidRequest, "limit must be a positive integer"))
+			return
+		}
+		if v > 200 {
+			v = 200
+		}
+		limit = v
+	}
+
+	offset := 0
+	if s := q.Get("offset"); s != "" {
+		v, perr := strconv.Atoi(s)
+		if perr != nil || v < 0 {
+			writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgInvalidRequest, "offset must be a non-negative integer"))
+			return
+		}
+		offset = v
+	}
+
+	// Request limit+1 to compute has_more without a separate COUNT.
+	rows, err := h.calls.List(ctx, store.WebhookCallListFilter{
+		WebhookID: &id,
+		Status:    status,
+		Limit:     limit + 1,
+		Offset:    offset,
+	})
+	if err != nil {
+		slog.Error("webhook.admin.list_calls_failed", "error", err, "id", id)
+		writeError(w, http.StatusInternalServerError, protocol.ErrInternal, i18n.T(locale, i18n.MsgInternalError, "list calls"))
+		return
+	}
+
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+
+	items := make([]webhookCallSummary, 0, len(rows))
+	for i := range rows {
+		c := &rows[i]
+		items = append(items, webhookCallSummary{
+			ID:            c.ID,
+			DeliveryID:    c.DeliveryID,
+			Status:        c.Status,
+			Mode:          c.Mode,
+			Attempts:      c.Attempts,
+			CallbackURL:   c.CallbackURL,
+			LastError:     c.LastError,
+			NextAttemptAt: c.NextAttemptAt,
+			StartedAt:     c.StartedAt,
+			CompletedAt:   c.CompletedAt,
+			CreatedAt:     c.CreatedAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, webhookCallsPageResp{
+		Items:   items,
+		Limit:   limit,
+		Offset:  offset,
+		HasMore: hasMore,
+	})
 }
 
 // --- Helpers ---

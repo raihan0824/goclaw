@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -222,8 +221,14 @@ func webhookTenantCtxWithRole(tenantID uuid.UUID, userID, role string) context.C
 const testAdminEncKey = "00000000000000000000000000000000"
 
 func newAdminHandler(ws *adminWebhookStore, ts *adminTenantStore) *WebhooksAdminHandler {
-	h := NewWebhooksAdminHandler(ws, ts, nil)
+	h := NewWebhooksAdminHandler(ws, nil, ts, nil)
 	h.SetEncKey(testAdminEncKey) // required since K6 guard rejects empty encKey
+	return h
+}
+
+func newAdminHandlerWithCalls(ws *adminWebhookStore, cs store.WebhookCallStore, ts *adminTenantStore) *WebhooksAdminHandler {
+	h := NewWebhooksAdminHandler(ws, cs, ts, nil)
+	h.SetEncKey(testAdminEncKey)
 	return h
 }
 
@@ -385,71 +390,6 @@ func TestWebhookAdmin_Create_InvalidKind_400(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-// TestWebhookAdmin_Create_LiteMessageKind_403 verifies Lite rejects kind=message.
-func TestWebhookAdmin_Create_LiteMessageKind_403(t *testing.T) {
-	// Set Lite edition for this test, restore Standard after.
-	edition.SetCurrent(edition.Lite)
-	t.Cleanup(func() { edition.SetCurrent(edition.Standard) })
-
-	tenantID := uuid.New()
-	userID := "user-4"
-
-	ts := &adminTenantStore{
-		roles: map[string]string{
-			tenantID.String() + ":" + userID: store.TenantRoleAdmin,
-		},
-	}
-	ws := newAdminWebhookStore()
-	h := newAdminHandler(ws, ts)
-
-	ctx := webhookTenantAdminCtx(tenantID, userID)
-	w := doRequest(t, h, http.MethodPost, "/v1/webhooks", map[string]any{
-		"name": "x",
-		"kind": "message",
-	}, ctx)
-
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("want 403 for message kind on Lite, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-// TestWebhookAdmin_Create_LiteForcesLocalhostOnly verifies Lite forces localhost_only=true.
-func TestWebhookAdmin_Create_LiteForcesLocalhostOnly(t *testing.T) {
-	edition.SetCurrent(edition.Lite)
-	t.Cleanup(func() { edition.SetCurrent(edition.Standard) })
-
-	tenantID := uuid.New()
-	userID := "user-5"
-
-	ts := &adminTenantStore{
-		roles: map[string]string{
-			tenantID.String() + ":" + userID: store.TenantRoleAdmin,
-		},
-	}
-	ws := newAdminWebhookStore()
-	h := newAdminHandler(ws, ts)
-
-	ctx := webhookTenantAdminCtx(tenantID, userID)
-	// Client sends localhost_only=false — server must override to true.
-	w := doRequest(t, h, http.MethodPost, "/v1/webhooks", map[string]any{
-		"name":           "x",
-		"kind":           "llm",
-		"localhost_only": false,
-	}, ctx)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("want 201, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var resp webhookCreateResp
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !resp.LocalhostOnly {
-		t.Fatal("Lite edition must force localhost_only=true regardless of client input")
 	}
 }
 
@@ -720,5 +660,267 @@ func TestGenerateWebhookSecret(t *testing.T) {
 	raw2, _, _, _ := generateWebhookSecret()
 	if raw == raw2 {
 		t.Fatal("secrets must be unique per generation")
+	}
+}
+
+// ---- stub WebhookCallStore for list-calls tests ----
+
+type adminCallsStore struct {
+	rows       []store.WebhookCallData // pre-sorted DESC by created_at (caller's responsibility)
+	lastFilter store.WebhookCallListFilter
+	lastTenant uuid.UUID
+}
+
+func (s *adminCallsStore) Create(_ context.Context, _ *store.WebhookCallData) error { return nil }
+func (s *adminCallsStore) GetByID(_ context.Context, _ uuid.UUID) (*store.WebhookCallData, error) {
+	return nil, sql.ErrNoRows
+}
+func (s *adminCallsStore) GetByIdempotency(_ context.Context, _ uuid.UUID, _ string) (*store.WebhookCallData, error) {
+	return nil, sql.ErrNoRows
+}
+func (s *adminCallsStore) UpdateStatus(_ context.Context, _ uuid.UUID, _ map[string]any) error {
+	return nil
+}
+func (s *adminCallsStore) UpdateStatusCAS(_ context.Context, _ uuid.UUID, _ string, _ map[string]any) error {
+	return nil
+}
+func (s *adminCallsStore) ClaimNext(_ context.Context, _ uuid.UUID, _ time.Time) (*store.WebhookCallData, error) {
+	return nil, sql.ErrNoRows
+}
+func (s *adminCallsStore) List(ctx context.Context, f store.WebhookCallListFilter) ([]store.WebhookCallData, error) {
+	s.lastFilter = f
+	s.lastTenant = store.TenantIDFromContext(ctx)
+
+	filtered := make([]store.WebhookCallData, 0, len(s.rows))
+	for _, r := range s.rows {
+		if r.TenantID != s.lastTenant {
+			continue
+		}
+		if f.WebhookID != nil && r.WebhookID != *f.WebhookID {
+			continue
+		}
+		if f.Status != "" && r.Status != f.Status {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+
+	// Mimic PG: apply offset then limit.
+	if f.Offset >= len(filtered) {
+		return nil, nil
+	}
+	filtered = filtered[f.Offset:]
+	if f.Limit > 0 && f.Limit < len(filtered) {
+		filtered = filtered[:f.Limit]
+	}
+	return filtered, nil
+}
+func (s *adminCallsStore) DeleteOlderThan(_ context.Context, _ uuid.UUID, _ time.Time) (int64, error) {
+	return 0, nil
+}
+func (s *adminCallsStore) ReclaimStale(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+// makeCallRows produces n call rows for webhookID under tenantID, with created_at
+// descending so r[0] is newest. status is applied to all rows.
+func makeCallRows(tenantID, webhookID uuid.UUID, n int, status string) []store.WebhookCallData {
+	rows := make([]store.WebhookCallData, n)
+	now := time.Now()
+	for i := 0; i < n; i++ {
+		rows[i] = store.WebhookCallData{
+			ID:         uuid.New(),
+			TenantID:   tenantID,
+			WebhookID:  webhookID,
+			DeliveryID: uuid.New(),
+			Mode:       "async",
+			Status:     status,
+			Attempts:   0,
+			CreatedAt:  now.Add(-time.Duration(i) * time.Minute), // DESC
+		}
+	}
+	return rows
+}
+
+func TestWebhookAdmin_ListCalls_HappyPath(t *testing.T) {
+	tenantID := uuid.New()
+	userID := "user-lc"
+	webhookID := uuid.New()
+
+	ts := &adminTenantStore{
+		roles: map[string]string{tenantID.String() + ":" + userID: store.TenantRoleAdmin},
+	}
+	ws := newAdminWebhookStore(&store.WebhookData{
+		ID: webhookID, TenantID: tenantID, Name: "wh", Kind: "llm",
+	})
+	cs := &adminCallsStore{rows: makeCallRows(tenantID, webhookID, 3, "done")}
+	h := newAdminHandlerWithCalls(ws, cs, ts)
+
+	ctx := webhookTenantAdminCtx(tenantID, userID)
+	w := doRequest(t, h, http.MethodGet, "/v1/webhooks/"+webhookID.String()+"/calls", nil, ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp webhookCallsPageResp
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Items) != 3 {
+		t.Fatalf("want 3 items, got %d", len(resp.Items))
+	}
+	if resp.HasMore {
+		t.Fatal("has_more must be false when items fit in one page")
+	}
+	if resp.Limit != 50 || resp.Offset != 0 {
+		t.Fatalf("unexpected pagination defaults: limit=%d offset=%d", resp.Limit, resp.Offset)
+	}
+	// Verify the heavy payload fields are NOT serialized.
+	body := w.Body.String()
+	if bytes.Contains([]byte(body), []byte(`"request_payload"`)) ||
+		bytes.Contains([]byte(body), []byte(`"response"`)) ||
+		bytes.Contains([]byte(body), []byte(`"lease_token"`)) {
+		t.Fatalf("response must omit request_payload/response/lease_token, got: %s", body)
+	}
+}
+
+func TestWebhookAdmin_ListCalls_CrossTenant_404(t *testing.T) {
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+	userA := "user-a"
+	webhookID := uuid.New()
+
+	ts := &adminTenantStore{
+		roles: map[string]string{tenantA.String() + ":" + userA: store.TenantRoleAdmin},
+	}
+	ws := newAdminWebhookStore(&store.WebhookData{
+		ID: webhookID, TenantID: tenantB, Name: "b-wh", Kind: "llm",
+	})
+	// Even if rows exist for tenant B, A must not see them — and not be told they exist.
+	cs := &adminCallsStore{rows: makeCallRows(tenantB, webhookID, 5, "done")}
+	h := newAdminHandlerWithCalls(ws, cs, ts)
+
+	ctx := webhookTenantAdminCtx(tenantA, userA)
+	w := doRequest(t, h, http.MethodGet, "/v1/webhooks/"+webhookID.String()+"/calls", nil, ctx)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404 for cross-tenant list-calls, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWebhookAdmin_ListCalls_StatusFilter(t *testing.T) {
+	tenantID := uuid.New()
+	userID := "user-lc-status"
+	webhookID := uuid.New()
+
+	ts := &adminTenantStore{
+		roles: map[string]string{tenantID.String() + ":" + userID: store.TenantRoleAdmin},
+	}
+	ws := newAdminWebhookStore(&store.WebhookData{
+		ID: webhookID, TenantID: tenantID, Name: "wh", Kind: "llm",
+	})
+	rows := append(makeCallRows(tenantID, webhookID, 2, "done"),
+		makeCallRows(tenantID, webhookID, 3, "failed")...)
+	cs := &adminCallsStore{rows: rows}
+	h := newAdminHandlerWithCalls(ws, cs, ts)
+
+	ctx := webhookTenantAdminCtx(tenantID, userID)
+	w := doRequest(t, h, http.MethodGet, "/v1/webhooks/"+webhookID.String()+"/calls?status=failed", nil, ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if cs.lastFilter.Status != "failed" {
+		t.Fatalf("status filter not propagated, got %q", cs.lastFilter.Status)
+	}
+	var resp webhookCallsPageResp
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 3 {
+		t.Fatalf("want 3 failed items, got %d", len(resp.Items))
+	}
+}
+
+func TestWebhookAdmin_ListCalls_InvalidStatus_400(t *testing.T) {
+	tenantID := uuid.New()
+	userID := "user-lc-bad"
+	webhookID := uuid.New()
+
+	ts := &adminTenantStore{
+		roles: map[string]string{tenantID.String() + ":" + userID: store.TenantRoleAdmin},
+	}
+	ws := newAdminWebhookStore(&store.WebhookData{
+		ID: webhookID, TenantID: tenantID, Name: "wh", Kind: "llm",
+	})
+	cs := &adminCallsStore{}
+	h := newAdminHandlerWithCalls(ws, cs, ts)
+
+	ctx := webhookTenantAdminCtx(tenantID, userID)
+	w := doRequest(t, h, http.MethodGet, "/v1/webhooks/"+webhookID.String()+"/calls?status=banana", nil, ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for unknown status, got %d", w.Code)
+	}
+}
+
+func TestWebhookAdmin_ListCalls_PaginationHasMore(t *testing.T) {
+	tenantID := uuid.New()
+	userID := "user-lc-page"
+	webhookID := uuid.New()
+
+	ts := &adminTenantStore{
+		roles: map[string]string{tenantID.String() + ":" + userID: store.TenantRoleAdmin},
+	}
+	ws := newAdminWebhookStore(&store.WebhookData{
+		ID: webhookID, TenantID: tenantID, Name: "wh", Kind: "llm",
+	})
+	cs := &adminCallsStore{rows: makeCallRows(tenantID, webhookID, 5, "done")}
+	h := newAdminHandlerWithCalls(ws, cs, ts)
+
+	ctx := webhookTenantAdminCtx(tenantID, userID)
+
+	// Page 1: limit=2, offset=0 → 2 items, has_more=true.
+	w := doRequest(t, h, http.MethodGet, "/v1/webhooks/"+webhookID.String()+"/calls?limit=2&offset=0", nil, ctx)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var p1 webhookCallsPageResp
+	_ = json.NewDecoder(w.Body).Decode(&p1)
+	if len(p1.Items) != 2 || !p1.HasMore || p1.Limit != 2 || p1.Offset != 0 {
+		t.Fatalf("page1 unexpected: items=%d has_more=%v limit=%d offset=%d", len(p1.Items), p1.HasMore, p1.Limit, p1.Offset)
+	}
+	// Verify the store was asked for limit+1 (peek for has_more).
+	if cs.lastFilter.Limit != 3 {
+		t.Fatalf("store filter must request limit+1=3, got %d", cs.lastFilter.Limit)
+	}
+
+	// Page 3: limit=2, offset=4 → 1 item, has_more=false.
+	w = doRequest(t, h, http.MethodGet, "/v1/webhooks/"+webhookID.String()+"/calls?limit=2&offset=4", nil, ctx)
+	var p3 webhookCallsPageResp
+	_ = json.NewDecoder(w.Body).Decode(&p3)
+	if len(p3.Items) != 1 || p3.HasMore {
+		t.Fatalf("page3 unexpected: items=%d has_more=%v", len(p3.Items), p3.HasMore)
+	}
+}
+
+func TestWebhookAdmin_ListCalls_NonAdmin_403(t *testing.T) {
+	tenantID := uuid.New()
+	userID := "user-viewer"
+	webhookID := uuid.New()
+
+	// Viewer role, not admin.
+	ts := &adminTenantStore{
+		roles: map[string]string{tenantID.String() + ":" + userID: store.TenantRoleViewer},
+	}
+	ws := newAdminWebhookStore(&store.WebhookData{
+		ID: webhookID, TenantID: tenantID, Name: "wh", Kind: "llm",
+	})
+	cs := &adminCallsStore{}
+	h := newAdminHandlerWithCalls(ws, cs, ts)
+
+	ctx := webhookTenantAdminCtx(tenantID, userID)
+	w := doRequest(t, h, http.MethodGet, "/v1/webhooks/"+webhookID.String()+"/calls", nil, ctx)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("want 403 for non-admin, got %d: %s", w.Code, w.Body.String())
 	}
 }
