@@ -44,6 +44,22 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   the LLM call and outbound. Cross-chat recall works because memory is
   keyed by `(agent_id, user_id)`.
 
+### Webhooks
+
+- **Full Lite parity.** Removed 4 edition gates so the Lite/SQLite build
+  can create `kind=message` webhooks, toggle `localhost_only` freely, and
+  mount `POST /v1/webhooks/message`. Channel delivery from external HMAC-
+  signed posts now works on the desktop/single-user edition.
+- **`GET /v1/webhooks/{id}/calls`** — new admin endpoint exposing rows
+  from the `webhook_calls` table for the new UI deliveries tab. Tenant-
+  scoped 404, omits heavy `request_payload`/`response`/`lease_token`,
+  paginates via a `limit+1` peek (`has_more`).
+- **Webhooks management page** under `/webhooks` (admin-only, "Send"
+  icon). Covers list, create with copy-once secret + HMAC key, rotate,
+  revoke, edit settings, and a delivery-history tab with status filter
+  and offset pagination. `kind=message` create lists existing channel
+  instances via the existing channels API. Full i18n in en/vi/zh.
+
 ### WhatsApp group names
 
 - **Auto-fetch group names** via cached `whatsmeow.GetGroupInfo` (24h TTL,
@@ -66,9 +82,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v11` |
-| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v7` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v12` |
+| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v9` |
 
-Roll the backend pod to `v11` and (if you use the standalone web
-container) the web pod to `v7`. No DB migration outside what upstream
+Roll the backend pod to `v12` and (if you use the standalone web
+container) the web pod to `v9`. No DB migration outside what upstream
 v3.12.0 already brings.
