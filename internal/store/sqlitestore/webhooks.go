@@ -228,6 +228,25 @@ func (s *SQLiteWebhookStore) Revoke(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *SQLiteWebhookStore) Delete(ctx context.Context, id uuid.UUID) error {
+	tid, err := requireTenantID(ctx)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM webhooks WHERE id = ? AND tenant_id = ?`,
+		id, tid,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *SQLiteWebhookStore) TouchLastUsed(ctx context.Context, id uuid.UUID) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE webhooks SET last_used_at = ? WHERE id = ?`,

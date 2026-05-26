@@ -56,8 +56,11 @@
     "creating": "创建中..."
   },
   "secret": {
+    "urlLabel": "POST URL",
     "tokenLabel": "Webhook 令牌",
     "hmacLabel": "HMAC 签名密钥",
+    "curlLabel": "示例请求",
+    "hmacHint": "若使用 HMAC 签名请求,请将 Authorization 头替换为 X-Webhook-Signature: t=<unix>,v1=<hmac_sha256_hex(t + . + body, key)>",
     "copy": "复制",
     "copied": "已复制!",
     "acknowledge": "我已保存该密钥",
@@ -77,8 +80,13 @@
   },
   "revoke": {
     "title": "吊销 Webhook",
-    "description": "确定吊销 \"{{name}}\"?此操作无法撤销。",
+    "description": "确定吊销 \"{{name}}\"?密钥会立即失效,但审计记录会被保留。之后可以对已吊销的 Webhook 执行永久删除。",
     "confirmLabel": "吊销"
+  },
+  "delete": {
+    "title": "永久删除 Webhook",
+    "description": "确定删除 \"{{name}}\"?这会删除 Webhook 及其所有投递历史。此操作无法撤销。",
+    "confirmLabel": "永久删除"
   },
   "tabs": {
     "settings": "设置",
@@ -115,9 +123,11 @@
     "updated": "已更新 Webhook",
     "rotated": "密钥已轮换",
     "revoked": "已吊销 Webhook",
+    "deleted": "已删除 Webhook",
     "failedCreate": "创建 Webhook 失败",
     "failedUpdate": "更新 Webhook 失败",
     "failedRotate": "轮换密钥失败",
-    "failedRevoke": "吊销 Webhook 失败"
+    "failedRevoke": "吊销 Webhook 失败",
+    "failedDelete": "删除 Webhook 失败"
   }
 }

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
-import { Send, Plus, RefreshCw, Ban, ArrowLeft, RefreshCcw } from "lucide-react";
+import { Send, Plus, RefreshCw, Ban, Trash2, ArrowLeft, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,7 +19,7 @@ import {
   useUpdateWebhook,
   useRotateWebhook,
 } from "./hooks/use-webhooks";
-import type { WebhookData, WebhookCreateResponse, WebhookRotateResponse } from "@/types/webhook";
+import type { WebhookData, WebhookCreateResponse, WebhookKind, WebhookRotateResponse } from "@/types/webhook";
 
 const WebhookCreateDialog = lazy(() =>
   import("./webhook-create-dialog").then((m) => ({ default: m.WebhookCreateDialog })),
@@ -49,17 +49,18 @@ function WebhookList() {
   const { t } = useTranslation("webhooks");
   const { t: tc } = useTranslation("common");
   const navigate = useNavigate();
-  const { webhooks, loading, refresh, createWebhook, revokeWebhook } = useWebhooks();
+  const { webhooks, loading, refresh, createWebhook, revokeWebhook, purgeWebhook } = useWebhooks();
   const spinning = useMinLoading(loading);
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [revokeTarget, setRevokeTarget] = useState<WebhookData | null>(null);
-  const [revoking, setRevoking] = useState(false);
+  const [actionTarget, setActionTarget] = useState<WebhookData | null>(null);
+  const [acting, setActing] = useState(false);
   const [secretShown, setSecretShown] = useState<{
     secret: string;
     hmac?: string;
     title: string;
     description: string;
+    kind: WebhookKind;
   } | null>(null);
 
   const filtered = webhooks.filter(
@@ -76,17 +77,22 @@ function WebhookList() {
       hmac: res.hmac_signing_key,
       title: t("created.title"),
       description: t("created.description"),
+      kind: res.kind,
     });
   };
 
-  const handleRevoke = async () => {
-    if (!revokeTarget) return;
-    setRevoking(true);
+  const handleAction = async () => {
+    if (!actionTarget) return;
+    setActing(true);
     try {
-      await revokeWebhook(revokeTarget.id);
-      setRevokeTarget(null);
+      if (actionTarget.revoked) {
+        await purgeWebhook(actionTarget.id);
+      } else {
+        await revokeWebhook(actionTarget.id);
+      }
+      setActionTarget(null);
     } finally {
-      setRevoking(false);
+      setActing(false);
     }
   };
 
@@ -165,20 +171,22 @@ function WebhookList() {
                         {wh.last_used_at ? formatRelativeTime(wh.last_used_at) : t("neverUsed")}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {!wh.revoked && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setRevokeTarget(wh);
-                            }}
-                            className="text-destructive hover:text-destructive"
-                            title={t("revoke.title")}
-                          >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActionTarget(wh);
+                          }}
+                          className="text-destructive hover:text-destructive"
+                          title={wh.revoked ? t("delete.title") : t("revoke.title")}
+                        >
+                          {wh.revoked ? (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          ) : (
                             <Ban className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
+                          )}
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -201,19 +209,26 @@ function WebhookList() {
             description={secretShown.description}
             secret={secretShown.secret}
             hmacSigningKey={secretShown.hmac}
+            kind={secretShown.kind}
           />
         )}
       </Suspense>
 
       <ConfirmDialog
-        open={!!revokeTarget}
-        onOpenChange={(v) => !v && setRevokeTarget(null)}
-        title={t("revoke.title")}
-        description={t("revoke.description", { name: revokeTarget?.name ?? "" })}
-        confirmLabel={t("revoke.confirmLabel")}
+        open={!!actionTarget}
+        onOpenChange={(v) => !v && setActionTarget(null)}
+        title={actionTarget?.revoked ? t("delete.title") : t("revoke.title")}
+        description={
+          actionTarget?.revoked
+            ? t("delete.description", { name: actionTarget?.name ?? "" })
+            : t("revoke.description", { name: actionTarget?.name ?? "" })
+        }
+        confirmLabel={
+          actionTarget?.revoked ? t("delete.confirmLabel") : t("revoke.confirmLabel")
+        }
         variant="destructive"
-        onConfirm={handleRevoke}
-        loading={revoking}
+        onConfirm={handleAction}
+        loading={acting}
       />
     </div>
   );
@@ -325,6 +340,7 @@ function WebhookDetail({ id }: { id: string }) {
             description={t("rotated.description")}
             secret={rotatedSecret.secret}
             hmacSigningKey={rotatedSecret.hmac_signing_key}
+            kind={webhook.kind}
           />
         )}
       </Suspense>

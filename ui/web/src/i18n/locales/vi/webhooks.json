@@ -56,8 +56,11 @@
     "creating": "Đang tạo..."
   },
   "secret": {
+    "urlLabel": "URL POST",
     "tokenLabel": "Token webhook",
     "hmacLabel": "Khóa ký HMAC",
+    "curlLabel": "Yêu cầu mẫu",
+    "hmacHint": "Với yêu cầu ký HMAC, thay header Authorization bằng X-Webhook-Signature: t=<unix>,v1=<hmac_sha256_hex(t + . + body, key)>",
     "copy": "Sao chép",
     "copied": "Đã sao chép!",
     "acknowledge": "Tôi đã lưu khóa bí mật",
@@ -77,8 +80,13 @@
   },
   "revoke": {
     "title": "Thu hồi webhook",
-    "description": "Thu hồi \"{{name}}\"? Hành động này không thể hoàn tác.",
+    "description": "Thu hồi \"{{name}}\"? Khóa sẽ ngừng hoạt động ngay, nhưng bản ghi vẫn được giữ. Sau đó bạn có thể xóa vĩnh viễn webhook đã thu hồi.",
     "confirmLabel": "Thu hồi"
+  },
+  "delete": {
+    "title": "Xóa vĩnh viễn webhook",
+    "description": "Xóa \"{{name}}\"? Thao tác này xóa webhook và TẤT CẢ lịch sử gửi. Không thể hoàn tác.",
+    "confirmLabel": "Xóa vĩnh viễn"
   },
   "tabs": {
     "settings": "Cài đặt",
@@ -115,9 +123,11 @@
     "updated": "Đã cập nhật webhook",
     "rotated": "Đã xoay khóa",
     "revoked": "Đã thu hồi webhook",
+    "deleted": "Đã xóa webhook",
     "failedCreate": "Tạo webhook thất bại",
     "failedUpdate": "Cập nhật webhook thất bại",
     "failedRotate": "Xoay khóa thất bại",
-    "failedRevoke": "Thu hồi webhook thất bại"
+    "failedRevoke": "Thu hồi webhook thất bại",
+    "failedDelete": "Xóa webhook thất bại"
   }
 }

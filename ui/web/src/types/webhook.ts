@@ -9,10 +9,10 @@ export interface WebhookData {
   name: string;
   kind: WebhookKind;
   secret_prefix: string;
-  scopes: string[];
+  scopes: string[] | null;
   channel_id?: string | null;
   rate_limit_per_min: number;
-  ip_allowlist: string[];
+  ip_allowlist: string[] | null;
   require_hmac: boolean;
   localhost_only: boolean;
   revoked: boolean;

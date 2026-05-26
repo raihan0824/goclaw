@@ -505,6 +505,26 @@ func (h *WebhooksAdminHandler) handleRevoke(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// ?purge=true permanently deletes the row (and cascades webhook_calls).
+	// Safety: the webhook must already be revoked — forces an explicit two-step
+	// flow so an active webhook can never be wiped in a single API call.
+	if r.URL.Query().Get("purge") == "true" {
+		if !wh.Revoked {
+			writeError(w, http.StatusConflict, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidRequest, "webhook must be revoked before purge"))
+			return
+		}
+		if err := h.webhooks.Delete(ctx, id); err != nil {
+			slog.Error("webhook.admin.delete_failed", "error", err, "id", id)
+			writeError(w, http.StatusNotFound, protocol.ErrNotFound, i18n.T(locale, i18n.MsgNotFound, "webhook", id.String()))
+			return
+		}
+		slog.Info("webhook.deleted", "id", id, "tenant_id", tenantID, "actor", extractUserID(r))
+		h.emitCacheInvalidate(id.String())
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+		return
+	}
+
 	if err := h.webhooks.Revoke(ctx, id); err != nil {
 		slog.Error("webhook.admin.revoke_failed", "error", err, "id", id)
 		writeError(w, http.StatusNotFound, protocol.ErrNotFound, i18n.T(locale, i18n.MsgNotFound, "webhook", id.String()))

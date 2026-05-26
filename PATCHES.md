@@ -55,10 +55,14 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   scoped 404, omits heavy `request_payload`/`response`/`lease_token`,
   paginates via a `limit+1` peek (`has_more`).
 - **Webhooks management page** under `/webhooks` (admin-only, "Send"
-  icon). Covers list, create with copy-once secret + HMAC key, rotate,
-  revoke, edit settings, and a delivery-history tab with status filter
-  and offset pagination. `kind=message` create lists existing channel
-  instances via the existing channels API. Full i18n in en/vi/zh.
+  icon). Covers list, create with copy-once secret + HMAC key + POST URL
+  + curl example, rotate, revoke, permanent delete (two-step: must be
+  revoked first), edit settings, and a delivery-history tab with status
+  filter and offset pagination. `kind=message` create lists existing
+  channel instances via the existing channels API. Full i18n in en/vi/zh.
+- **`DELETE /v1/webhooks/{id}?purge=true`** — hard-delete endpoint for
+  revoked webhooks. Returns 409 if the row is still active (forces a
+  two-step flow); cascades `webhook_calls` via the existing FK.
 
 ### WhatsApp group names
 
@@ -82,9 +86,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v12` |
-| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v9` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v13` |
+| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v10` |
 
-Roll the backend pod to `v12` and (if you use the standalone web
-container) the web pod to `v9`. No DB migration outside what upstream
+Roll the backend pod to `v13` and (if you use the standalone web
+container) the web pod to `v10`. No DB migration outside what upstream
 v3.12.0 already brings.

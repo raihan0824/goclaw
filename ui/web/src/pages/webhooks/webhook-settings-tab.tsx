@@ -23,7 +23,7 @@ export function WebhookSettingsTab({ webhook, onSave }: Props) {
     name: webhook.name,
     channel_id: webhook.channel_id ?? "",
     rate_limit_per_min: webhook.rate_limit_per_min,
-    ip_allowlist_text: webhook.ip_allowlist.join("\n"),
+    ip_allowlist_text: (webhook.ip_allowlist ?? []).join("\n"),
     require_hmac: webhook.require_hmac,
     localhost_only: webhook.localhost_only,
   };

@@ -134,6 +134,16 @@ func (s *adminWebhookStore) Revoke(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *adminWebhookStore) Delete(_ context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.rows[id]; !ok {
+		return sql.ErrNoRows
+	}
+	delete(s.rows, id)
+	return nil
+}
+
 func (s *adminWebhookStore) TouchLastUsed(_ context.Context, _ uuid.UUID) error { return nil }
 
 // GetByHashUnscoped and GetByIDUnscoped are auth-middleware-only unscoped lookups.
@@ -922,5 +932,82 @@ func TestWebhookAdmin_ListCalls_NonAdmin_403(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("want 403 for non-admin, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWebhookAdmin_Purge_RequiresRevoked_409(t *testing.T) {
+	tenantID := uuid.New()
+	userID := "user-purge-active"
+	webhookID := uuid.New()
+
+	ts := &adminTenantStore{
+		roles: map[string]string{tenantID.String() + ":" + userID: store.TenantRoleAdmin},
+	}
+	// Webhook is NOT revoked.
+	ws := newAdminWebhookStore(&store.WebhookData{
+		ID: webhookID, TenantID: tenantID, Name: "wh", Kind: "llm", Revoked: false,
+	})
+	h := newAdminHandler(ws, ts)
+
+	ctx := webhookTenantAdminCtx(tenantID, userID)
+	w := doRequest(t, h, http.MethodDelete, "/v1/webhooks/"+webhookID.String()+"?purge=true", nil, ctx)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("want 409 when purging an active webhook, got %d: %s", w.Code, w.Body.String())
+	}
+	// Row must still exist (no accidental delete).
+	if _, err := ws.GetByID(ctx, webhookID); err != nil {
+		t.Fatal("purge of active webhook must not delete the row")
+	}
+}
+
+func TestWebhookAdmin_Purge_DeletesRevokedRow(t *testing.T) {
+	tenantID := uuid.New()
+	userID := "user-purge-revoked"
+	webhookID := uuid.New()
+
+	ts := &adminTenantStore{
+		roles: map[string]string{tenantID.String() + ":" + userID: store.TenantRoleAdmin},
+	}
+	ws := newAdminWebhookStore(&store.WebhookData{
+		ID: webhookID, TenantID: tenantID, Name: "wh", Kind: "llm", Revoked: true,
+	})
+	h := newAdminHandler(ws, ts)
+
+	ctx := webhookTenantAdminCtx(tenantID, userID)
+	w := doRequest(t, h, http.MethodDelete, "/v1/webhooks/"+webhookID.String()+"?purge=true", nil, ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 purging revoked webhook, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := ws.GetByID(ctx, webhookID); err == nil {
+		t.Fatal("purged row must be gone from the store")
+	}
+}
+
+func TestWebhookAdmin_Purge_CrossTenant_404(t *testing.T) {
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+	userA := "user-purge-a"
+	webhookID := uuid.New()
+
+	ts := &adminTenantStore{
+		roles: map[string]string{tenantA.String() + ":" + userA: store.TenantRoleAdmin},
+	}
+	// Revoked but owned by tenant B.
+	ws := newAdminWebhookStore(&store.WebhookData{
+		ID: webhookID, TenantID: tenantB, Name: "b", Kind: "llm", Revoked: true,
+	})
+	h := newAdminHandler(ws, ts)
+
+	ctx := webhookTenantAdminCtx(tenantA, userA)
+	w := doRequest(t, h, http.MethodDelete, "/v1/webhooks/"+webhookID.String()+"?purge=true", nil, ctx)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404 cross-tenant purge, got %d: %s", w.Code, w.Body.String())
+	}
+	// Tenant B's row must still exist.
+	if _, err := ws.GetByID(webhookTenantAdminCtx(tenantB, "anyone"), webhookID); err != nil {
+		t.Fatal("cross-tenant purge must not touch the row")
 	}
 }

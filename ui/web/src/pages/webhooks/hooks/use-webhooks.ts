@@ -56,7 +56,21 @@ export function useWebhooks() {
     [http, invalidate],
   );
 
-  return { webhooks, loading, refresh: invalidate, createWebhook, revokeWebhook };
+  const purgeWebhook = useCallback(
+    async (id: string) => {
+      try {
+        await http.delete(`/v1/webhooks/${id}?purge=true`);
+        await invalidate();
+        toast.success(i18next.t("webhooks:toast.deleted"));
+      } catch (err) {
+        toast.error(i18next.t("webhooks:toast.failedDelete"), err instanceof Error ? err.message : "");
+        throw err;
+      }
+    },
+    [http, invalidate],
+  );
+
+  return { webhooks, loading, refresh: invalidate, createWebhook, revokeWebhook, purgeWebhook };
 }
 
 export function useWebhook(id: string | undefined) {

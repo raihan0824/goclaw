@@ -56,8 +56,11 @@
     "creating": "Creating..."
   },
   "secret": {
+    "urlLabel": "POST URL",
     "tokenLabel": "Webhook token",
     "hmacLabel": "HMAC signing key",
+    "curlLabel": "Example request",
+    "hmacHint": "For HMAC-signed requests, replace the Authorization header with X-Webhook-Signature: t=<unix>,v1=<hmac_sha256_hex(t + . + body, key)>",
     "copy": "Copy",
     "copied": "Copied!",
     "acknowledge": "I have saved this secret",
@@ -77,8 +80,13 @@
   },
   "revoke": {
     "title": "Revoke webhook",
-    "description": "Revoke \"{{name}}\"? This cannot be undone.",
+    "description": "Revoke \"{{name}}\"? The secret stops working immediately, but the audit record is kept. You can permanently delete a revoked webhook afterwards.",
     "confirmLabel": "Revoke"
+  },
+  "delete": {
+    "title": "Permanently delete webhook",
+    "description": "Delete \"{{name}}\"? This removes the webhook and ALL of its delivery history. This cannot be undone.",
+    "confirmLabel": "Delete forever"
   },
   "tabs": {
     "settings": "Settings",
@@ -115,9 +123,11 @@
     "updated": "Webhook updated",
     "rotated": "Secret rotated",
     "revoked": "Webhook revoked",
+    "deleted": "Webhook deleted",
     "failedCreate": "Failed to create webhook",
     "failedUpdate": "Failed to update webhook",
     "failedRotate": "Failed to rotate secret",
-    "failedRevoke": "Failed to revoke webhook"
+    "failedRevoke": "Failed to revoke webhook",
+    "failedDelete": "Failed to delete webhook"
   }
 }

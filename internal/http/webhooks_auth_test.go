@@ -85,6 +85,7 @@ func (s *stubWebhookStore) RotateSecret(_ context.Context, _ uuid.UUID, _, _, _ 
 	return nil
 }
 func (s *stubWebhookStore) Revoke(_ context.Context, _ uuid.UUID) error        { return nil }
+func (s *stubWebhookStore) Delete(_ context.Context, _ uuid.UUID) error        { return nil }
 func (s *stubWebhookStore) TouchLastUsed(_ context.Context, _ uuid.UUID) error { return nil }
 
 type stubWebhookCallStore struct {
