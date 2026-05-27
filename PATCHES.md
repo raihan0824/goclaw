@@ -76,6 +76,12 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   `GOCLAW_ENCRYPTION_KEY` is unset and `/v1/webhooks/*` is silently 404).
   Each handler also logs `webhook.routes_mounted` at startup with its
   patterns.
+- **Init-order fix for webhook message handler.** `channelMgr` was being
+  created AFTER `wireHTTPHandlersOnServer`, so the wiring's
+  `d.channelMgr != nil` guard always failed and `/v1/webhooks/message`
+  was silently not mounted. Hoisted the `channels.NewManager(msgBus)`
+  call to run before HTTP wiring. The 9-vs-11 route discrepancy in
+  `/health` was the smoking gun.
 
 ### WhatsApp group names
 
@@ -99,9 +105,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v15` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v16` |
 | Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v11` |
 
-Roll the backend pod to `v15` (web is unchanged at `v11`). No DB
+Roll the backend pod to `v16` (web is unchanged at `v11`). No DB
 migration outside what upstream
 v3.12.0 already brings.
