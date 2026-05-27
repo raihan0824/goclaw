@@ -63,6 +63,12 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 - **`DELETE /v1/webhooks/{id}?purge=true`** — hard-delete endpoint for
   revoked webhooks. Returns 409 if the row is still active (forces a
   two-step flow); cascades `webhook_calls` via the existing FK.
+- **Named webhook URLs** — every webhook now has a dedicated URL that
+  embeds its name: `POST /v1/webhooks/{name}/message` and
+  `POST /v1/webhooks/{name}/llm`. The legacy unnamed variants still
+  work for back-compat. The auth middleware verifies the resolved
+  webhook's name matches the URL segment; mismatch → 401. The UI shows
+  the new URL on the create + rotate dialog and on the settings tab.
 
 ### WhatsApp group names
 
@@ -86,9 +92,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v13` |
-| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v10` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v14` |
+| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v11` |
 
-Roll the backend pod to `v13` and (if you use the standalone web
-container) the web pod to `v10`. No DB migration outside what upstream
+Roll the backend pod to `v14` and (if you use the standalone web
+container) the web pod to `v11`. No DB migration outside what upstream
 v3.12.0 already brings.

@@ -93,6 +93,7 @@
     "deliveries": "Lần gửi"
   },
   "settings": {
+    "url": "URL POST",
     "kind": "Loại",
     "secretPrefix": "Tiền tố khóa",
     "id": "ID",

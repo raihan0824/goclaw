@@ -93,6 +93,7 @@
     "deliveries": "投递记录"
   },
   "settings": {
+    "url": "POST URL",
     "kind": "类型",
     "secretPrefix": "密钥前缀",
     "id": "ID",

@@ -17,8 +17,11 @@ import { useWebhookDeliveries } from "./hooks/use-webhook-deliveries";
 import type { WebhookCallStatus } from "@/types/webhook";
 import { Inbox } from "lucide-react";
 
-const STATUS_OPTIONS: ("" | WebhookCallStatus)[] = [
-  "",
+const STATUS_ALL = "__all__" as const;
+type StatusFilter = typeof STATUS_ALL | WebhookCallStatus;
+
+const STATUS_OPTIONS: StatusFilter[] = [
+  STATUS_ALL,
   "queued",
   "running",
   "done",
@@ -44,16 +47,18 @@ interface Props {
 
 export function WebhookDeliveriesTab({ webhookId }: Props) {
   const { t } = useTranslation("webhooks");
-  const [status, setStatus] = useState<"" | WebhookCallStatus>("");
+  const [status, setStatus] = useState<StatusFilter>(STATUS_ALL);
   const [offset, setOffset] = useState(0);
   const limit = 25;
 
-  const { data, isLoading } = useWebhookDeliveries(webhookId, { status, limit, offset });
+  // Translate the "all" sentinel back to "" when calling the API.
+  const apiStatus = status === STATUS_ALL ? "" : status;
+  const { data, isLoading } = useWebhookDeliveries(webhookId, { status: apiStatus, limit, offset });
   const items = data?.items ?? [];
   const hasMore = data?.has_more ?? false;
 
   const onStatusChange = (v: string) => {
-    setStatus(v as "" | WebhookCallStatus);
+    setStatus(v as StatusFilter);
     setOffset(0);
   };
 
@@ -67,8 +72,8 @@ export function WebhookDeliveriesTab({ webhookId }: Props) {
           </SelectTrigger>
           <SelectContent>
             {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s || "all"} value={s}>
-                {s ? t(`status.${s}`) : t("deliveries.statusAll")}
+              <SelectItem key={s} value={s}>
+                {s === STATUS_ALL ? t("deliveries.statusAll") : t(`status.${s}`)}
               </SelectItem>
             ))}
           </SelectContent>

@@ -93,6 +93,7 @@
     "deliveries": "Deliveries"
   },
   "settings": {
+    "url": "POST URL",
     "kind": "Kind",
     "secretPrefix": "Secret prefix",
     "id": "ID",

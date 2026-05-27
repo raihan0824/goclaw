@@ -61,6 +61,7 @@ function WebhookList() {
     title: string;
     description: string;
     kind: WebhookKind;
+    name: string;
   } | null>(null);
 
   const filtered = webhooks.filter(
@@ -78,6 +79,7 @@ function WebhookList() {
       title: t("created.title"),
       description: t("created.description"),
       kind: res.kind,
+      name: res.name,
     });
   };
 
@@ -210,6 +212,7 @@ function WebhookList() {
             secret={secretShown.secret}
             hmacSigningKey={secretShown.hmac}
             kind={secretShown.kind}
+            name={secretShown.name}
           />
         )}
       </Suspense>
@@ -341,6 +344,7 @@ function WebhookDetail({ id }: { id: string }) {
             secret={rotatedSecret.secret}
             hmacSigningKey={rotatedSecret.hmac_signing_key}
             kind={webhook.kind}
+            name={webhook.name}
           />
         )}
       </Suspense>

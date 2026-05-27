@@ -63,7 +63,9 @@ func (h *WebhookMessageHandler) SetEncKey(encKey string) {
 	h.encKey = encKey
 }
 
-// RegisterRoutes mounts POST /v1/webhooks/message wrapped in the auth middleware.
+// RegisterRoutes mounts POST /v1/webhooks/message and the per-webhook
+// named variant POST /v1/webhooks/{name}/message, both wrapped in the
+// auth middleware. The legacy unnamed route is kept for back-compat.
 func (h *WebhookMessageHandler) RegisterRoutes(mux *http.ServeMux) {
 	authMW := WebhookAuthMiddleware(
 		h.webhooks,
@@ -73,7 +75,9 @@ func (h *WebhookMessageHandler) RegisterRoutes(mux *http.ServeMux) {
 		"message",
 		WebhookMaxBodyMessage,
 	)
-	mux.Handle("POST /v1/webhooks/message", authMW(http.HandlerFunc(h.handle)))
+	handler := authMW(http.HandlerFunc(h.handle))
+	mux.Handle("POST /v1/webhooks/message", handler)
+	mux.Handle("POST /v1/webhooks/{name}/message", handler)
 }
 
 // webhookMessageReq is the JSON request body for POST /v1/webhooks/message.

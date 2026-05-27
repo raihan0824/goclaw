@@ -130,7 +130,8 @@ func (h *WebhookLLMHandler) SetEncKey(encKey string) {
 	h.encKey = encKey
 }
 
-// RegisterRoutes mounts POST /v1/webhooks/llm behind the auth middleware.
+// RegisterRoutes mounts POST /v1/webhooks/llm and the per-webhook named
+// variant POST /v1/webhooks/{name}/llm, both wrapped in the auth middleware.
 // Mounted in both Standard and Lite editions (localhost_only enforced at middleware level).
 func (h *WebhookLLMHandler) RegisterRoutes(mux *http.ServeMux) {
 	authMW := WebhookAuthMiddleware(
@@ -141,7 +142,9 @@ func (h *WebhookLLMHandler) RegisterRoutes(mux *http.ServeMux) {
 		"llm",
 		WebhookMaxBodyLLM,
 	)
-	mux.Handle("POST /v1/webhooks/llm", authMW(http.HandlerFunc(h.handle)))
+	handler := authMW(http.HandlerFunc(h.handle))
+	mux.Handle("POST /v1/webhooks/llm", handler)
+	mux.Handle("POST /v1/webhooks/{name}/llm", handler)
 }
 
 // handle is the HTTP handler for POST /v1/webhooks/llm.

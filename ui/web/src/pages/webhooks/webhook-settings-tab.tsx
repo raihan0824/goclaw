@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTranslation } from "react-i18next";
+import { Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,14 @@ interface Props {
 export function WebhookSettingsTab({ webhook, onSave }: Props) {
   const { t } = useTranslation("webhooks");
   const [saving, setSaving] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const webhookUrl = `${window.location.origin}/v1/webhooks/${encodeURIComponent(webhook.name)}/${webhook.kind}`;
+  const copyUrl = async () => {
+    await navigator.clipboard.writeText(webhookUrl);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
+  };
 
   const defaults: WebhookUpdateFormData = {
     name: webhook.name,
@@ -71,6 +80,24 @@ export function WebhookSettingsTab({ webhook, onSave }: Props) {
   return (
     <form onSubmit={handleSubmit(onValid)} className="space-y-4 max-w-2xl">
       <div className="grid gap-3 rounded-md border p-3 text-sm bg-muted/30">
+        <div>
+          <div className="text-xs text-muted-foreground mb-1">{t("settings.url")}</div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 overflow-x-auto rounded bg-background px-2 py-1.5 text-xs font-mono break-all">
+              {webhookUrl}
+            </code>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={copyUrl}
+              className="gap-1 shrink-0"
+            >
+              {copiedUrl ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copiedUrl ? t("secret.copied") : t("secret.copy")}
+            </Button>
+          </div>
+        </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">{t("settings.kind")}</span>
           <span className="font-mono">{webhook.kind}</span>

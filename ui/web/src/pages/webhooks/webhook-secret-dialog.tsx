@@ -20,6 +20,7 @@ interface Props {
   secret: string;
   hmacSigningKey?: string;
   kind?: WebhookKind;
+  name?: string;
 }
 
 export function WebhookSecretDialog({
@@ -30,15 +31,18 @@ export function WebhookSecretDialog({
   secret,
   hmacSigningKey,
   kind,
+  name,
 }: Props) {
   const { t } = useTranslation("webhooks");
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
 
-  const url = kind ? `${window.location.origin}/v1/webhooks/${kind}` : "";
-  const curlExample = kind
-    ? buildCurl(url, kind, secret)
+  const url = kind
+    ? name
+      ? `${window.location.origin}/v1/webhooks/${encodeURIComponent(name)}/${kind}`
+      : `${window.location.origin}/v1/webhooks/${kind}`
     : "";
+  const curlExample = kind ? buildCurl(url, kind, secret) : "";
 
   const copy = async (value: string, field: string) => {
     await navigator.clipboard.writeText(value);
