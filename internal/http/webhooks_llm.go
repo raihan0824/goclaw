@@ -145,6 +145,10 @@ func (h *WebhookLLMHandler) RegisterRoutes(mux *http.ServeMux) {
 	handler := authMW(http.HandlerFunc(h.handle))
 	mux.Handle("POST /v1/webhooks/llm", handler)
 	mux.Handle("POST /v1/webhooks/{name}/llm", handler)
+	slog.Info("webhook.routes_mounted",
+		"kind", "llm",
+		"patterns", []string{"POST /v1/webhooks/llm", "POST /v1/webhooks/{name}/llm"},
+	)
 }
 
 // handle is the HTTP handler for POST /v1/webhooks/llm.

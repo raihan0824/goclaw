@@ -69,6 +69,13 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   work for back-compat. The auth middleware verifies the resolved
   webhook's name matches the URL segment; mismatch → 401. The UI shows
   the new URL on the create + rotate dialog and on the settings tab.
+- **`/health` now exposes version + mounted webhook routes.** Returns
+  `{"status":"ok","protocol":N,"version":"v3.12.0-patched.vN","webhook_routes":[...]}`
+  so operators can verify at runtime which image is deployed and whether
+  the webhook subsystem actually came up (empty `webhook_routes` =
+  `GOCLAW_ENCRYPTION_KEY` is unset and `/v1/webhooks/*` is silently 404).
+  Each handler also logs `webhook.routes_mounted` at startup with its
+  patterns.
 
 ### WhatsApp group names
 
@@ -92,9 +99,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v14` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v15` |
 | Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v11` |
 
-Roll the backend pod to `v14` and (if you use the standalone web
-container) the web pod to `v11`. No DB migration outside what upstream
+Roll the backend pod to `v15` (web is unchanged at `v11`). No DB
+migration outside what upstream
 v3.12.0 already brings.

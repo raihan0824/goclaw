@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -366,10 +367,62 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleHealth returns a simple health check response.
+// The version + webhook_routes fields are diagnostic — they let operators
+// confirm at runtime which image is deployed and whether the webhook
+// runtime endpoints are mounted (e.g. when GOCLAW_ENCRYPTION_KEY is unset
+// the entire webhook subsystem is silently disabled).
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status":"ok","protocol":%d}`, protocol.ProtocolVersion)
+
+	type healthResp struct {
+		Status        string   `json:"status"`
+		Protocol      int      `json:"protocol"`
+		Version       string   `json:"version,omitempty"`
+		WebhookRoutes []string `json:"webhook_routes,omitempty"`
+	}
+	resp := healthResp{
+		Status:        "ok",
+		Protocol:      protocol.ProtocolVersion,
+		Version:       s.version,
+		WebhookRoutes: s.mountedWebhookRoutes(),
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// mountedWebhookRoutes inspects registered handlers and returns the
+// webhook-related URL patterns they mount. Empty list when the webhook
+// subsystem is disabled (typically: GOCLAW_ENCRYPTION_KEY unset).
+func (s *Server) mountedWebhookRoutes() []string {
+	var out []string
+	for _, h := range s.handlers {
+		if h == nil {
+			continue
+		}
+		switch h.(type) {
+		case *httpapi.WebhooksAdminHandler:
+			out = append(out,
+				"POST /v1/webhooks",
+				"GET /v1/webhooks",
+				"GET /v1/webhooks/{id}",
+				"PATCH /v1/webhooks/{id}",
+				"POST /v1/webhooks/{id}/rotate",
+				"DELETE /v1/webhooks/{id}",
+				"GET /v1/webhooks/{id}/calls",
+			)
+		case *httpapi.WebhookMessageHandler:
+			out = append(out,
+				"POST /v1/webhooks/message",
+				"POST /v1/webhooks/{name}/message",
+			)
+		case *httpapi.WebhookLLMHandler:
+			out = append(out,
+				"POST /v1/webhooks/llm",
+				"POST /v1/webhooks/{name}/llm",
+			)
+		}
+	}
+	return out
 }
 
 // clientIP extracts the real client IP from the request, checking proxy headers first.

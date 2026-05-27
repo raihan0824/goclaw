@@ -78,6 +78,10 @@ func (h *WebhookMessageHandler) RegisterRoutes(mux *http.ServeMux) {
 	handler := authMW(http.HandlerFunc(h.handle))
 	mux.Handle("POST /v1/webhooks/message", handler)
 	mux.Handle("POST /v1/webhooks/{name}/message", handler)
+	slog.Info("webhook.routes_mounted",
+		"kind", "message",
+		"patterns", []string{"POST /v1/webhooks/message", "POST /v1/webhooks/{name}/message"},
+	)
 }
 
 // webhookMessageReq is the JSON request body for POST /v1/webhooks/message.

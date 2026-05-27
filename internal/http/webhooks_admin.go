@@ -67,9 +67,16 @@ func (h *WebhooksAdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /v1/webhooks/{id}", h.requireAdmin(h.handleUpdate))
 	mux.HandleFunc("POST /v1/webhooks/{id}/rotate", h.requireAdmin(h.handleRotate))
 	mux.HandleFunc("DELETE /v1/webhooks/{id}", h.requireAdmin(h.handleRevoke))
+	patterns := []string{
+		"POST /v1/webhooks", "GET /v1/webhooks",
+		"GET /v1/webhooks/{id}", "PATCH /v1/webhooks/{id}",
+		"POST /v1/webhooks/{id}/rotate", "DELETE /v1/webhooks/{id}",
+	}
 	if h.calls != nil {
 		mux.HandleFunc("GET /v1/webhooks/{id}/calls", h.requireAdmin(h.handleListCalls))
+		patterns = append(patterns, "GET /v1/webhooks/{id}/calls")
 	}
+	slog.Info("webhook.routes_mounted", "kind", "admin", "patterns", patterns)
 }
 
 func (h *WebhooksAdminHandler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
