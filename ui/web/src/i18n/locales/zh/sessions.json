@@ -18,13 +18,17 @@
   },
   "detail": {
     "reset": "重置",
+    "compact": "压缩",
     "delete": "删除",
     "deleteTitle": "删除Session",
     "deleteDescription": "这将永久删除此Session中的所有消息。",
     "resetTitle": "重置Session",
     "resetDescription": "这将清除所有消息但保留Session。",
+    "compactTitle": "压缩Session",
+    "compactDescription": "将历史截断为最近的 4 条消息。旧消息被丢弃 — 当上下文窗口已满但仍想保留最近对话时很有用。Session 本身不会被删除。",
     "confirmDelete": "删除",
     "confirmReset": "重置",
+    "confirmCompact": "压缩",
     "noMessages": "此Session中没有消息",
     "summary": "摘要",
     "showMore": "显示更多",
@@ -39,6 +43,9 @@
     "deleteFailed": "删除Session失败",
     "reset": "Session已重置",
     "resetFailed": "重置Session失败",
+    "compacted": "已压缩 {{original}} → {{kept}} 条消息",
+    "compactTooShort": "Session 太短,无需压缩",
+    "compactFailed": "压缩Session失败",
     "updated": "Session已更新",
     "updateFailed": "更新Session失败"
   }

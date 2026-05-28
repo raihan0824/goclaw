@@ -89,6 +89,33 @@ export function useSessions(opts: UseSessionsOptions = {}) {
     [ws, invalidate],
   );
 
+  const compactSession = useCallback(
+    async (key: string, keepLast = 4) => {
+      if (!ws.isConnected) return;
+      try {
+        const res = await ws.call<{ ok: boolean; original?: number; kept?: number; message?: string }>(
+          Methods.SESSIONS_COMPACT,
+          { key, keepLast },
+        );
+        await invalidate();
+        if (res.message === "session too short to compact") {
+          toast.success(i18next.t("sessions:toast.compactTooShort"));
+        } else {
+          toast.success(
+            i18next.t("sessions:toast.compacted", {
+              original: res.original ?? 0,
+              kept: res.kept ?? keepLast,
+            }),
+          );
+        }
+      } catch (err) {
+        toast.error(i18next.t("sessions:toast.compactFailed"), userFriendlyError(err));
+        throw err;
+      }
+    },
+    [ws, invalidate],
+  );
+
   const patchSession = useCallback(
     async (key: string, updates: { label?: string; model?: string; metadata?: Record<string, string> }) => {
       if (!ws.isConnected) return;
@@ -104,5 +131,5 @@ export function useSessions(opts: UseSessionsOptions = {}) {
     [ws, invalidate],
   );
 
-  return { sessions, total, loading, refresh: invalidate, preview, deleteSession, resetSession, patchSession };
+  return { sessions, total, loading, refresh: invalidate, preview, deleteSession, resetSession, compactSession, patchSession };
 }

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
@@ -198,10 +199,38 @@ func (l *Loop) buildPipelineDeps(req *RunRequest, bridgeRS *runState) pipeline.P
 				})
 			}
 		},
-		UpdateMetadata:   cb.updateMetadata,
-		BootstrapCleanup: cb.bootstrapCleanup,
-		MaybeSummarize:   cb.maybeSummarize,
+		UpdateMetadata:     cb.updateMetadata,
+		BootstrapCleanup:   cb.bootstrapCleanup,
+		MaybeSummarize:     cb.maybeSummarize,
+		AutoCompactOnEmpty: l.autoCompactOnEmpty,
 	}
+}
+
+// autoCompactOnEmpty truncates a session's history when the LLM returned
+// empty content and the conversation already has more than autoCompactThreshold
+// messages. Acts as a safety net for sessions where token budget is exhausted
+// (LLM produces only thinking, content="", finalize falls back to "...").
+// Runs synchronously because the caller (FinalizeStage) wants the truncation
+// to happen before the next user turn arrives via channel events.
+const (
+	autoCompactThreshold = 20 // messages — below this, normal summarization should cover it
+	autoCompactKeepLast  = 4  // last 2 user/assistant pairs
+)
+
+func (l *Loop) autoCompactOnEmpty(ctx context.Context, sessionKey string, historyLen int) bool {
+	if l.sessions == nil || sessionKey == "" || historyLen <= autoCompactThreshold {
+		return false
+	}
+	l.sessions.TruncateHistory(ctx, sessionKey, autoCompactKeepLast)
+	l.sessions.IncrementCompaction(ctx, sessionKey)
+	l.sessions.Save(ctx, sessionKey)
+	slog.Warn("pipeline.auto_compact_on_empty",
+		"session_key", sessionKey,
+		"original_len", historyLen,
+		"kept_last", autoCompactKeepLast,
+		"reason", "empty_content_with_long_history",
+	)
+	return true
 }
 
 // convertRunInput converts agent.RunRequest to pipeline.RunInput.

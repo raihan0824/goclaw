@@ -83,6 +83,24 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   call to run before HTTP wiring. The 9-vs-11 route discrepancy in
   `/health` was the smoking gun.
 
+### Session management
+
+- **Compact button in Sessions UI.** Session detail page now has a
+  Compact action next to Reset/Delete that calls the existing
+  `sessions.compact` RPC (truncates history to last 4 messages,
+  preserves the session row). Better than Reset when context is full
+  but you want to keep the recent flow.
+- **Auto-compact on empty content.** Pipeline `FinalizeStage` now
+  detects the "LLM returned no text" scenario: when content is empty,
+  the session is not silent (NO_REPLY), and history is longer than 20
+  messages, the loop adapter truncates to the last 4 messages, bumps
+  `compaction_count`, and logs `pipeline.auto_compact_on_empty`. The
+  current turn still falls back to a user-facing
+  `"[auto-compacted: context was full, please retry]"` message
+  (instead of the silent `"..."`) so the user knows what happened.
+  Safety net for Kimi Coding-style sessions where reasoning_content is
+  produced but `content` stays empty after the context window saturates.
+
 ### WhatsApp group names
 
 - **Auto-fetch group names** via cached `whatsmeow.GetGroupInfo` (24h TTL,
@@ -105,9 +123,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v16` |
-| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v11` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v17` |
+| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v12` |
 
-Roll the backend pod to `v16` (web is unchanged at `v11`). No DB
-migration outside what upstream
+Roll the backend pod to `v17` and (if you use the standalone web
+container) the web pod to `v12`. No DB migration outside what upstream
 v3.12.0 already brings.

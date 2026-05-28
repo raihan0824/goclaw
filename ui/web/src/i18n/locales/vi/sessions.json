@@ -18,13 +18,17 @@
   },
   "detail": {
     "reset": "Đặt lại",
+    "compact": "Nén",
     "delete": "Xóa",
     "deleteTitle": "Xóa session",
     "deleteDescription": "Thao tác này sẽ xóa vĩnh viễn tất cả tin nhắn trong session này.",
     "resetTitle": "Đặt lại phiên",
     "resetDescription": "Thao tác này sẽ xóa tất cả tin nhắn nhưng giữ lại phiên.",
+    "compactTitle": "Nén session",
+    "compactDescription": "Cắt lịch sử chỉ giữ 4 tin nhắn cuối. Tin nhắn cũ bị bỏ — hữu ích khi cửa sổ ngữ cảnh đầy nhưng bạn muốn giữ luồng gần đây. Session vẫn còn.",
     "confirmDelete": "Xóa",
     "confirmReset": "Đặt lại",
+    "confirmCompact": "Nén",
     "noMessages": "Không có tin nhắn trong session này",
     "summary": "Tóm tắt",
     "showMore": "Xem thêm",
@@ -39,6 +43,9 @@
     "deleteFailed": "Không thể xóa session",
     "reset": "Đã đặt lại session",
     "resetFailed": "Không thể đặt lại session",
+    "compacted": "Đã nén {{original}} → {{kept}} tin nhắn",
+    "compactTooShort": "Session quá ngắn để nén",
+    "compactFailed": "Không thể nén session",
     "updated": "Đã cập nhật session",
     "updateFailed": "Không thể cập nhật session"
   }
