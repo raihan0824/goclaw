@@ -124,6 +124,10 @@ type WebhookStore interface {
 	// Revoke marks a webhook as revoked. Returns sql.ErrNoRows if not found.
 	Revoke(ctx context.Context, id uuid.UUID) error
 
+	// Delete permanently removes a webhook row. Caller MUST verify ownership
+	// and revoked status above the store layer. webhook_calls rows cascade.
+	Delete(ctx context.Context, id uuid.UUID) error
+
 	// TouchLastUsed updates last_used_at. Best-effort — failures are not fatal.
 	TouchLastUsed(ctx context.Context, id uuid.UUID) error
 }

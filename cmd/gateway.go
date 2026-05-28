@@ -364,6 +364,14 @@ func runGateway() {
 		wakeH.SetPostTurnProcessor(postTurn)
 	}
 
+	// Channel manager must exist BEFORE wireHTTPHandlersOnServer is called —
+	// the webhook message handler wiring guards on `d.channelMgr != nil` and
+	// silently skips mount otherwise. Subsequent wiring at the original
+	// location below references `channelMgr` directly in this scope, so
+	// hoisting the assignment is safe.
+	channelMgr := channels.NewManager(msgBus)
+	deps.channelMgr = channelMgr
+
 	// Wire all server.Set*Handler() calls via extracted helper.
 	deps.wireHTTPHandlersOnServer(
 		httpHandlers{
@@ -451,12 +459,9 @@ func runGateway() {
 		})
 	}
 
-	// Channel manager
-	channelMgr := channels.NewManager(msgBus)
-	deps.channelMgr = channelMgr
-
 	// Wire channel member resolver into permission grant paths (WS + HTTP) so
 	// file_writer grants coming from the Web UI auto-enrich their metadata.
+	// channelMgr was hoisted above for the webhook message handler wiring.
 	cfgPermsMethods.SetMemberResolver(channelMgr)
 	if channelInstancesH != nil {
 		channelInstancesH.SetMemberResolver(channelMgr)

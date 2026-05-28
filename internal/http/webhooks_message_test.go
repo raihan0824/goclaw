@@ -144,6 +144,7 @@ func (s *msgWebhookStore) RotateSecret(_ context.Context, _ uuid.UUID, _, _, _ s
 	return nil
 }
 func (s *msgWebhookStore) Revoke(_ context.Context, _ uuid.UUID) error        { return nil }
+func (s *msgWebhookStore) Delete(_ context.Context, _ uuid.UUID) error        { return nil }
 func (s *msgWebhookStore) TouchLastUsed(_ context.Context, _ uuid.UUID) error { return nil }
 func (s *msgWebhookStore) GetByHashUnscoped(_ context.Context, _ string) (*store.WebhookData, error) {
 	return nil, sql.ErrNoRows

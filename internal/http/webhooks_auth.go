@@ -158,6 +158,21 @@ func WebhookAuthMiddleware(
 				return
 			}
 
+			// 5b. Name match — if the URL embeds {name} (the named-URL variant),
+			// the resolved webhook must have the same name. Prevents a valid token
+			// being used against a different webhook's named URL.
+			if urlName := r.PathValue("name"); urlName != "" && urlName != webhook.Name {
+				slog.Warn("security.webhook.name_mismatch",
+					"webhook_id_hint", webhook.SecretPrefix,
+					"url_name", urlName,
+					"webhook_name", webhook.Name,
+				)
+				writeJSON(w, http.StatusUnauthorized, map[string]string{
+					"error": i18n.T(locale, i18n.MsgWebhookAuthFailed),
+				})
+				return
+			}
+
 			// 6. Rate limits — per-webhook then per-tenant (both must pass).
 			tenantID := webhook.TenantID.String()
 			webhookID := webhook.ID.String()

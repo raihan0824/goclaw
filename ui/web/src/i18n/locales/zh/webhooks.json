@@ -1,0 +1,134 @@
+{
+  "title": "Webhooks",
+  "description": "用于入站 LLM 调用与频道消息投递的 HTTP 端点。",
+  "addWebhook": "创建 Webhook",
+  "searchPlaceholder": "搜索 Webhook...",
+  "emptyTitle": "暂无 Webhook",
+  "emptyDescription": "创建一个带有 HMAC 签名的端点。",
+  "notFound": "未找到该 Webhook",
+  "neverUsed": "从未使用",
+  "columns": {
+    "name": "名称",
+    "kind": "类型",
+    "status": "状态",
+    "lastUsed": "最近使用",
+    "actions": "操作"
+  },
+  "status": {
+    "active": "已启用",
+    "revoked": "已吊销",
+    "queued": "排队中",
+    "running": "运行中",
+    "done": "已完成",
+    "failed": "失败",
+    "dead": "已放弃"
+  },
+  "kind": {
+    "llm": "LLM",
+    "message": "消息"
+  },
+  "kindHint": {
+    "llm": "调用一个 Agent。同步返回(≤30 秒)或异步通过 callback_url 回调。",
+    "message": "向已绑定的频道(Telegram、WhatsApp、Discord 等)投递负载。需要选择频道。"
+  },
+  "actions": {
+    "rotate": "轮换密钥"
+  },
+  "form": {
+    "title": "创建 Webhook",
+    "description": "密钥仅在创建后显示一次。",
+    "name": "名称",
+    "namePlaceholder": "如 zapier-ingest、ops-bot",
+    "kind": "类型",
+    "agentId": "Agent ID (可选)",
+    "agentIdPlaceholder": "UUID — 将此 Webhook 绑定到特定 Agent",
+    "channelId": "频道",
+    "channelIdPlaceholder": "选择一个频道实例",
+    "noChannels": "尚未配置频道实例",
+    "rateLimit": "速率限制(每分钟)",
+    "rateLimitHint": "0 = 不限制。",
+    "ipAllowlist": "IP 白名单",
+    "requireHmac": "要求 HMAC 签名",
+    "requireHmacHint": "拒绝缺少有效 X-Webhook-Signature 头的请求。",
+    "localhostOnly": "仅本地访问",
+    "localhostOnlyHint": "仅接受来自 127.0.0.1 / ::1 的请求。",
+    "create": "创建",
+    "creating": "创建中..."
+  },
+  "secret": {
+    "urlLabel": "POST URL",
+    "tokenLabel": "Webhook 令牌",
+    "hmacLabel": "HMAC 签名密钥",
+    "curlLabel": "示例请求",
+    "hmacHint": "若使用 HMAC 签名请求,请将 Authorization 头替换为 X-Webhook-Signature: t=<unix>,v1=<hmac_sha256_hex(t + . + body, key)>",
+    "copy": "复制",
+    "copied": "已复制!",
+    "acknowledge": "我已保存该密钥",
+    "done": "完成"
+  },
+  "created": {
+    "title": "Webhook 已创建",
+    "description": "立即复制密钥 — 它不会再次显示。"
+  },
+  "rotated": {
+    "title": "密钥已轮换",
+    "description": "旧密钥已立即失效。请立即复制新密钥。"
+  },
+  "rotate": {
+    "title": "轮换密钥",
+    "description": "轮换会立即让当前密钥失效。使用旧密钥的客户端将开始报错。"
+  },
+  "revoke": {
+    "title": "吊销 Webhook",
+    "description": "确定吊销 \"{{name}}\"?密钥会立即失效,但审计记录会被保留。之后可以对已吊销的 Webhook 执行永久删除。",
+    "confirmLabel": "吊销"
+  },
+  "delete": {
+    "title": "永久删除 Webhook",
+    "description": "确定删除 \"{{name}}\"?这会删除 Webhook 及其所有投递历史。此操作无法撤销。",
+    "confirmLabel": "永久删除"
+  },
+  "tabs": {
+    "settings": "设置",
+    "deliveries": "投递记录"
+  },
+  "settings": {
+    "url": "POST URL",
+    "kind": "类型",
+    "secretPrefix": "密钥前缀",
+    "id": "ID",
+    "save": "保存",
+    "saving": "保存中...",
+    "discard": "撤销更改"
+  },
+  "deliveries": {
+    "empty": "暂无投递记录",
+    "filterStatus": "状态",
+    "statusAll": "全部",
+    "prev": "上一页",
+    "next": "下一页",
+    "range": "{{from}}-{{to}}",
+    "columns": {
+      "deliveryId": "投递",
+      "status": "状态",
+      "mode": "模式",
+      "attempts": "尝试次数",
+      "callback": "回调 URL",
+      "lastError": "最近错误",
+      "created": "创建时间",
+      "completed": "完成时间"
+    }
+  },
+  "toast": {
+    "created": "已创建 Webhook",
+    "updated": "已更新 Webhook",
+    "rotated": "密钥已轮换",
+    "revoked": "已吊销 Webhook",
+    "deleted": "已删除 Webhook",
+    "failedCreate": "创建 Webhook 失败",
+    "failedUpdate": "更新 Webhook 失败",
+    "failedRotate": "轮换密钥失败",
+    "failedRevoke": "吊销 Webhook 失败",
+    "failedDelete": "删除 Webhook 失败"
+  }
+}

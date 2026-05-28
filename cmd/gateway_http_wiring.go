@@ -173,6 +173,7 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 		if d.pgStores != nil && d.pgStores.Webhooks != nil {
 			adminH := httpapi.NewWebhooksAdminHandler(
 				d.pgStores.Webhooks,
+				d.pgStores.WebhookCalls,
 				d.pgStores.Tenants,
 				d.msgBus,
 			)
@@ -180,10 +181,8 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 			d.server.SetWebhooksAdminHandler(adminH)
 		}
 
-		// Webhook message endpoint — Standard edition only (channels required).
-		// Phase 05b: POST /v1/webhooks/message → sync channel send (text + optional media).
-		if edition.Current().AllowsChannels() &&
-			d.pgStores != nil &&
+		// Webhook message endpoint — POST /v1/webhooks/message → sync channel send.
+		if d.pgStores != nil &&
 			d.pgStores.Webhooks != nil &&
 			d.pgStores.WebhookCalls != nil &&
 			d.pgStores.ChannelInstances != nil &&

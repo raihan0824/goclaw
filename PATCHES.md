@@ -44,6 +44,45 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   the LLM call and outbound. Cross-chat recall works because memory is
   keyed by `(agent_id, user_id)`.
 
+### Webhooks
+
+- **Full Lite parity.** Removed 4 edition gates so the Lite/SQLite build
+  can create `kind=message` webhooks, toggle `localhost_only` freely, and
+  mount `POST /v1/webhooks/message`. Channel delivery from external HMAC-
+  signed posts now works on the desktop/single-user edition.
+- **`GET /v1/webhooks/{id}/calls`** — new admin endpoint exposing rows
+  from the `webhook_calls` table for the new UI deliveries tab. Tenant-
+  scoped 404, omits heavy `request_payload`/`response`/`lease_token`,
+  paginates via a `limit+1` peek (`has_more`).
+- **Webhooks management page** under `/webhooks` (admin-only, "Send"
+  icon). Covers list, create with copy-once secret + HMAC key + POST URL
+  + curl example, rotate, revoke, permanent delete (two-step: must be
+  revoked first), edit settings, and a delivery-history tab with status
+  filter and offset pagination. `kind=message` create lists existing
+  channel instances via the existing channels API. Full i18n in en/vi/zh.
+- **`DELETE /v1/webhooks/{id}?purge=true`** — hard-delete endpoint for
+  revoked webhooks. Returns 409 if the row is still active (forces a
+  two-step flow); cascades `webhook_calls` via the existing FK.
+- **Named webhook URLs** — every webhook now has a dedicated URL that
+  embeds its name: `POST /v1/webhooks/{name}/message` and
+  `POST /v1/webhooks/{name}/llm`. The legacy unnamed variants still
+  work for back-compat. The auth middleware verifies the resolved
+  webhook's name matches the URL segment; mismatch → 401. The UI shows
+  the new URL on the create + rotate dialog and on the settings tab.
+- **`/health` now exposes version + mounted webhook routes.** Returns
+  `{"status":"ok","protocol":N,"version":"v3.12.0-patched.vN","webhook_routes":[...]}`
+  so operators can verify at runtime which image is deployed and whether
+  the webhook subsystem actually came up (empty `webhook_routes` =
+  `GOCLAW_ENCRYPTION_KEY` is unset and `/v1/webhooks/*` is silently 404).
+  Each handler also logs `webhook.routes_mounted` at startup with its
+  patterns.
+- **Init-order fix for webhook message handler.** `channelMgr` was being
+  created AFTER `wireHTTPHandlersOnServer`, so the wiring's
+  `d.channelMgr != nil` guard always failed and `/v1/webhooks/message`
+  was silently not mounted. Hoisted the `channels.NewManager(msgBus)`
+  call to run before HTTP wiring. The 9-vs-11 route discrepancy in
+  `/health` was the smoking gun.
+
 ### WhatsApp group names
 
 - **Auto-fetch group names** via cached `whatsmeow.GetGroupInfo` (24h TTL,
@@ -66,9 +105,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v11` |
-| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v7` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v16` |
+| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v11` |
 
-Roll the backend pod to `v11` and (if you use the standalone web
-container) the web pod to `v7`. No DB migration outside what upstream
+Roll the backend pod to `v16` (web is unchanged at `v11`). No DB
+migration outside what upstream
 v3.12.0 already brings.

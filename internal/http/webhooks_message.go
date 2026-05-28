@@ -30,7 +30,6 @@ type channelDispatcher interface {
 }
 
 // WebhookMessageHandler handles POST /v1/webhooks/message.
-// Standard edition only — mount via edition.Current().AllowsChannels() gate.
 // Auth is enforced by WebhookAuthMiddleware (phase 03) with kind="message".
 type WebhookMessageHandler struct {
 	channelMgr       channelDispatcher
@@ -64,8 +63,9 @@ func (h *WebhookMessageHandler) SetEncKey(encKey string) {
 	h.encKey = encKey
 }
 
-// RegisterRoutes mounts POST /v1/webhooks/message wrapped in the auth middleware.
-// Only call when edition.Current().AllowsChannels() — callers enforce the gate.
+// RegisterRoutes mounts POST /v1/webhooks/message and the per-webhook
+// named variant POST /v1/webhooks/{name}/message, both wrapped in the
+// auth middleware. The legacy unnamed route is kept for back-compat.
 func (h *WebhookMessageHandler) RegisterRoutes(mux *http.ServeMux) {
 	authMW := WebhookAuthMiddleware(
 		h.webhooks,
@@ -75,7 +75,13 @@ func (h *WebhookMessageHandler) RegisterRoutes(mux *http.ServeMux) {
 		"message",
 		WebhookMaxBodyMessage,
 	)
-	mux.Handle("POST /v1/webhooks/message", authMW(http.HandlerFunc(h.handle)))
+	handler := authMW(http.HandlerFunc(h.handle))
+	mux.Handle("POST /v1/webhooks/message", handler)
+	mux.Handle("POST /v1/webhooks/{name}/message", handler)
+	slog.Info("webhook.routes_mounted",
+		"kind", "message",
+		"patterns", []string{"POST /v1/webhooks/message", "POST /v1/webhooks/{name}/message"},
+	)
 }
 
 // webhookMessageReq is the JSON request body for POST /v1/webhooks/message.

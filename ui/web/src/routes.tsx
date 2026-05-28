@@ -114,6 +114,9 @@ const BackupRestorePage = lazyWithRetry(() =>
 const HooksPage = lazyWithRetry(() =>
   import("@/pages/hooks").then((m) => ({ default: m.HooksPage })),
 );
+const WebhooksPage = lazyWithRetry(() =>
+  import("@/pages/webhooks").then((m) => ({ default: m.WebhooksPage })),
+);
 const WorkstationsPage = lazyWithRetry(() =>
   import("@/pages/workstations/workstations-page").then((m) => ({ default: m.WorkstationsPage })),
 );
@@ -177,6 +180,8 @@ export function AppRoutes() {
           <Route path={ROUTES.CRON_DETAIL} element={<CronPage key="detail" />} />
           <Route path={ROUTES.HOOKS} element={<HooksPage key="list" />} />
           <Route path={ROUTES.HOOK_DETAIL} element={<HooksPage key="detail" />} />
+          <Route path={ROUTES.WEBHOOKS} element={<RequireAdmin><WebhooksPage key="list" /></RequireAdmin>} />
+          <Route path={ROUTES.WEBHOOK_DETAIL} element={<RequireAdmin><WebhooksPage key="detail" /></RequireAdmin>} />
           {/* Admin-only pages */}
           <Route path={ROUTES.CONFIG} element={<RequireCrossTenant><ConfigPage /></RequireCrossTenant>} />
           <Route path={ROUTES.PROVIDERS} element={<RequireAdmin><ProvidersPage key="list" /></RequireAdmin>} />

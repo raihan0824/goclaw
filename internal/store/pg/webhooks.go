@@ -232,6 +232,25 @@ func (s *PGWebhookStore) Revoke(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *PGWebhookStore) Delete(ctx context.Context, id uuid.UUID) error {
+	tid, err := requireTenantID(ctx)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM webhooks WHERE id = $1 AND tenant_id = $2`,
+		id, tid,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *PGWebhookStore) TouchLastUsed(ctx context.Context, id uuid.UUID) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE webhooks SET last_used_at = $1 WHERE id = $2`,

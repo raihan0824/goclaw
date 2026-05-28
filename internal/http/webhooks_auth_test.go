@@ -85,6 +85,7 @@ func (s *stubWebhookStore) RotateSecret(_ context.Context, _ uuid.UUID, _, _, _ 
 	return nil
 }
 func (s *stubWebhookStore) Revoke(_ context.Context, _ uuid.UUID) error        { return nil }
+func (s *stubWebhookStore) Delete(_ context.Context, _ uuid.UUID) error        { return nil }
 func (s *stubWebhookStore) TouchLastUsed(_ context.Context, _ uuid.UUID) error { return nil }
 
 type stubWebhookCallStore struct {
@@ -848,5 +849,74 @@ func TestWebhookNonceCache_DifferentKeysIndependent(t *testing.T) {
 	c.Seen("key1")
 	if c.Seen("key2") {
 		t.Fatal("different keys should be independent")
+	}
+}
+
+// muxedAuthHandler wires the auth middleware behind a real ServeMux so
+// r.PathValue("name") is populated for tests that exercise the named-URL
+// variant (POST /v1/webhooks/{name}/llm).
+func muxedAuthHandler(ws store.WebhookStore, calls store.WebhookCallStore, kind string, maxBody int64) http.Handler {
+	limiter := newWebhookLimiter(0)
+	mw := WebhookAuthMiddleware(ws, calls, limiter, "", kind, maxBody)
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux := http.NewServeMux()
+	mux.Handle("POST /v1/webhooks/llm", mw(ok))
+	mux.Handle("POST /v1/webhooks/{name}/llm", mw(ok))
+	return mux
+}
+
+func TestWebhookAuth_NamedURL_HappyPath(t *testing.T) {
+	raw, _ := makeSecret()
+	wh := makeWebhook("llm", func(w *store.WebhookData) { w.Name = "ops-bot" })
+	ws := newStubWebhookStore(wh)
+	calls := newStubCallStore()
+
+	handler := muxedAuthHandler(ws, calls, "llm", WebhookMaxBodyLLM)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/v1/webhooks/ops-bot/llm", bytes.NewBufferString(`{"input":"hi"}`))
+	r.Header.Set("Authorization", "Bearer "+raw)
+	r.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("named URL with matching name must pass; got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWebhookAuth_NamedURL_NameMismatch_401(t *testing.T) {
+	raw, _ := makeSecret()
+	wh := makeWebhook("llm", func(w *store.WebhookData) { w.Name = "ops-bot" })
+	ws := newStubWebhookStore(wh)
+	calls := newStubCallStore()
+
+	handler := muxedAuthHandler(ws, calls, "llm", WebhookMaxBodyLLM)
+	w := httptest.NewRecorder()
+	// Token belongs to "ops-bot" but URL claims "stranger".
+	r := httptest.NewRequest(http.MethodPost, "/v1/webhooks/stranger/llm", bytes.NewBufferString(`{}`))
+	r.Header.Set("Authorization", "Bearer "+raw)
+	r.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("name mismatch must 401; got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWebhookAuth_UnnamedURL_StillWorks(t *testing.T) {
+	// Back-compat: the legacy /v1/webhooks/llm path must still authenticate
+	// the same token without complaining about a missing name.
+	raw, _ := makeSecret()
+	wh := makeWebhook("llm", func(w *store.WebhookData) { w.Name = "ops-bot" })
+	ws := newStubWebhookStore(wh)
+	calls := newStubCallStore()
+
+	handler := muxedAuthHandler(ws, calls, "llm", WebhookMaxBodyLLM)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, bearerReq(raw, `{}`))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("legacy unnamed URL must keep working; got %d: %s", w.Code, w.Body.String())
 	}
 }

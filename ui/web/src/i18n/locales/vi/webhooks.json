@@ -1,0 +1,134 @@
+{
+  "title": "Webhooks",
+  "description": "Điểm cuối HTTP cho lệnh gọi LLM đến và gửi tin nhắn qua kênh.",
+  "addWebhook": "Tạo webhook",
+  "searchPlaceholder": "Tìm webhook...",
+  "emptyTitle": "Chưa có webhook",
+  "emptyDescription": "Tạo webhook để mở một điểm cuối có ký HMAC.",
+  "notFound": "Không tìm thấy webhook",
+  "neverUsed": "Chưa dùng",
+  "columns": {
+    "name": "Tên",
+    "kind": "Loại",
+    "status": "Trạng thái",
+    "lastUsed": "Dùng lần cuối",
+    "actions": "Thao tác"
+  },
+  "status": {
+    "active": "Hoạt động",
+    "revoked": "Đã thu hồi",
+    "queued": "Đang chờ",
+    "running": "Đang chạy",
+    "done": "Hoàn tất",
+    "failed": "Thất bại",
+    "dead": "Hỏng"
+  },
+  "kind": {
+    "llm": "LLM",
+    "message": "Tin nhắn"
+  },
+  "kindHint": {
+    "llm": "Gọi một agent. Trả lời đồng bộ (≤30s) hoặc xếp hàng gọi lại với callback_url.",
+    "message": "Gửi payload tới một kênh đã gắn (Telegram, WhatsApp, Discord, ...). Cần chọn kênh."
+  },
+  "actions": {
+    "rotate": "Xoay khóa bí mật"
+  },
+  "form": {
+    "title": "Tạo webhook",
+    "description": "Khóa bí mật chỉ hiển thị một lần sau khi tạo.",
+    "name": "Tên",
+    "namePlaceholder": "vd. zapier-ingest, ops-bot",
+    "kind": "Loại",
+    "agentId": "Agent ID (tùy chọn)",
+    "agentIdPlaceholder": "UUID — gắn webhook này vào một agent cụ thể",
+    "channelId": "Kênh",
+    "channelIdPlaceholder": "Chọn một instance kênh",
+    "noChannels": "Chưa có instance kênh nào",
+    "rateLimit": "Giới hạn tần suất (mỗi phút)",
+    "rateLimitHint": "0 = không giới hạn.",
+    "ipAllowlist": "Danh sách IP cho phép",
+    "requireHmac": "Yêu cầu chữ ký HMAC",
+    "requireHmacHint": "Từ chối các yêu cầu không có header X-Webhook-Signature hợp lệ.",
+    "localhostOnly": "Chỉ localhost",
+    "localhostOnlyHint": "Chỉ chấp nhận yêu cầu từ 127.0.0.1 / ::1.",
+    "create": "Tạo",
+    "creating": "Đang tạo..."
+  },
+  "secret": {
+    "urlLabel": "URL POST",
+    "tokenLabel": "Token webhook",
+    "hmacLabel": "Khóa ký HMAC",
+    "curlLabel": "Yêu cầu mẫu",
+    "hmacHint": "Với yêu cầu ký HMAC, thay header Authorization bằng X-Webhook-Signature: t=<unix>,v1=<hmac_sha256_hex(t + . + body, key)>",
+    "copy": "Sao chép",
+    "copied": "Đã sao chép!",
+    "acknowledge": "Tôi đã lưu khóa bí mật",
+    "done": "Xong"
+  },
+  "created": {
+    "title": "Đã tạo webhook",
+    "description": "Sao chép khóa ngay — nó sẽ không hiện lại."
+  },
+  "rotated": {
+    "title": "Đã xoay khóa",
+    "description": "Khóa cũ đã ngừng hoạt động ngay lập tức. Sao chép khóa mới ngay."
+  },
+  "rotate": {
+    "title": "Xoay khóa bí mật",
+    "description": "Xoay khóa sẽ vô hiệu hóa khóa hiện tại ngay lập tức. Mọi client đang dùng nó sẽ bắt đầu lỗi."
+  },
+  "revoke": {
+    "title": "Thu hồi webhook",
+    "description": "Thu hồi \"{{name}}\"? Khóa sẽ ngừng hoạt động ngay, nhưng bản ghi vẫn được giữ. Sau đó bạn có thể xóa vĩnh viễn webhook đã thu hồi.",
+    "confirmLabel": "Thu hồi"
+  },
+  "delete": {
+    "title": "Xóa vĩnh viễn webhook",
+    "description": "Xóa \"{{name}}\"? Thao tác này xóa webhook và TẤT CẢ lịch sử gửi. Không thể hoàn tác.",
+    "confirmLabel": "Xóa vĩnh viễn"
+  },
+  "tabs": {
+    "settings": "Cài đặt",
+    "deliveries": "Lần gửi"
+  },
+  "settings": {
+    "url": "URL POST",
+    "kind": "Loại",
+    "secretPrefix": "Tiền tố khóa",
+    "id": "ID",
+    "save": "Lưu",
+    "saving": "Đang lưu...",
+    "discard": "Hủy bỏ"
+  },
+  "deliveries": {
+    "empty": "Chưa có lần gửi nào",
+    "filterStatus": "Trạng thái",
+    "statusAll": "Tất cả",
+    "prev": "Trước",
+    "next": "Sau",
+    "range": "{{from}}-{{to}}",
+    "columns": {
+      "deliveryId": "Mã gửi",
+      "status": "Trạng thái",
+      "mode": "Chế độ",
+      "attempts": "Số lần",
+      "callback": "URL gọi lại",
+      "lastError": "Lỗi gần nhất",
+      "created": "Tạo lúc",
+      "completed": "Xong lúc"
+    }
+  },
+  "toast": {
+    "created": "Đã tạo webhook",
+    "updated": "Đã cập nhật webhook",
+    "rotated": "Đã xoay khóa",
+    "revoked": "Đã thu hồi webhook",
+    "deleted": "Đã xóa webhook",
+    "failedCreate": "Tạo webhook thất bại",
+    "failedUpdate": "Cập nhật webhook thất bại",
+    "failedRotate": "Xoay khóa thất bại",
+    "failedRevoke": "Thu hồi webhook thất bại",
+    "failedDelete": "Xóa webhook thất bại"
+  }
+}
