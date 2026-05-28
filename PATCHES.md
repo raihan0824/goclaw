@@ -85,11 +85,18 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 ### Session management
 
-- **Compact button in Sessions UI.** Session detail page now has a
-  Compact action next to Reset/Delete that calls the existing
-  `sessions.compact` RPC (truncates history to last 4 messages,
-  preserves the session row). Better than Reset when context is full
-  but you want to keep the recent flow.
+- **Compact button in Sessions UI — now uses LLM summarization.** The
+  `sessions.compact` RPC now dispatches via `agent.Router.CompactSession`
+  to the per-agent `Loop.CompactSession` method, which runs the same
+  summarize-then-truncate flow Claude Code's `/compact` uses (preserve
+  active tasks, identifiers, decisions; save the summary on the session;
+  preserve up to 30 most recent MediaRefs on the first kept message).
+  Falls back to plain truncate if the summarizer call fails so users
+  always get a usable session. The response includes
+  `summarized: true|false` and the toast distinguishes "Summarized N → K
+  messages" vs "Truncated N → K messages (no summary)". `truncateOnly:
+  true` request param bypasses the LLM summarizer when the caller really
+  does want a plain truncate.
 - **Auto-compact on empty content.** Pipeline `FinalizeStage` now
   detects the "LLM returned no text" scenario: when content is empty,
   the session is not silent (NO_REPLY), and history is longer than 20
@@ -123,9 +130,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v17` |
-| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v12` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v18` |
+| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v13` |
 
-Roll the backend pod to `v17` and (if you use the standalone web
-container) the web pod to `v12`. No DB migration outside what upstream
+Roll the backend pod to `v18` and (if you use the standalone web
+container) the web pod to `v13`. No DB migration outside what upstream
 v3.12.0 already brings.

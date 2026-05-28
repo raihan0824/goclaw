@@ -29,6 +29,9 @@ func (s *stubAgent) IsRunning() bool                                     { retur
 func (s *stubAgent) Model() string                                       { return "test-model" }
 func (s *stubAgent) ProviderName() string                                { return "test" }
 func (s *stubAgent) Provider() providers.Provider                        { return nil }
+func (s *stubAgent) CompactSession(context.Context, string) (*CompactResult, error) {
+	return nil, nil
+}
 
 // stubResolver builds a ResolverFunc that returns a stubAgent with a
 // predetermined ID. If idByInput is set, the returned agent's ID is derived

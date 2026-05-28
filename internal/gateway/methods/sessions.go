@@ -3,6 +3,7 @@ package methods
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
@@ -14,15 +15,27 @@ import (
 )
 
 // SessionsMethods handles sessions.list, sessions.preview, sessions.patch, sessions.delete, sessions.reset.
+// SessionCompactor performs an LLM-summarize-then-truncate compaction for a
+// single session. Wired from the agent.Router so the sessions.compact RPC
+// can do the proper Claude-Code-style compaction instead of a plain truncate.
+// Result indicates whether summarization actually happened (false = truncate-
+// only fallback path) so the UI can adjust its toast.
+type SessionCompactor func(ctx context.Context, sessionKey string) (original, kept int, summarized bool, err error)
+
 type SessionsMethods struct {
-	sessions store.SessionStore
-	eventBus bus.EventPublisher
-	cfg      *config.Config
+	sessions  store.SessionStore
+	eventBus  bus.EventPublisher
+	cfg       *config.Config
+	compactor SessionCompactor // optional — when nil, handleCompact falls back to plain truncate
 }
 
 func NewSessionsMethods(sess store.SessionStore, eventBus bus.EventPublisher, cfg *config.Config) *SessionsMethods {
 	return &SessionsMethods{sessions: sess, eventBus: eventBus, cfg: cfg}
 }
+
+// SetCompactor wires the LLM compactor. Optional; must be called before
+// Register if used. nil = keep the legacy truncate-only behavior.
+func (m *SessionsMethods) SetCompactor(c SessionCompactor) { m.compactor = c }
 
 func (m *SessionsMethods) Register(router *gateway.MethodRouter) {
 	router.Register(protocol.MethodSessionsList, m.handleList)
@@ -233,12 +246,23 @@ func (m *SessionsMethods) handleReset(ctx context.Context, client *gateway.Clien
 }
 
 type sessionCompactParams struct {
-	Key      string `json:"key"`
-	KeepLast int    `json:"keepLast,omitempty"` // default 4
+	Key          string `json:"key"`
+	KeepLast     int    `json:"keepLast,omitempty"`     // default 4 — only used by the truncate-only fallback
+	TruncateOnly bool   `json:"truncateOnly,omitempty"` // skip the LLM summary pass even if a compactor is wired
 }
 
-// handleCompact truncates session history to the last N messages.
-// Issue 958: Manual session compaction API (truncate-only, no LLM summarization).
+// handleCompact compacts a session's history.
+//
+// Default behaviour (when a compactor is wired): runs the same LLM-
+// summarize-then-truncate path the auto-compactor uses (matches Claude
+// Code's `/compact`). The conversation summary is persisted on the
+// session, MediaRefs from the oldest messages are preserved on the first
+// kept message, and the compaction counter is incremented.
+//
+// Fallback (compactor nil OR TruncateOnly=true OR summarizer fails):
+// truncates the history to the last `keepLast` messages without any LLM
+// call. The response sets summarized=false so the UI can show "truncated"
+// instead of "summarized".
 func (m *SessionsMethods) handleCompact(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	locale := store.LocaleFromContext(ctx)
 	var params sessionCompactParams
@@ -281,15 +305,35 @@ func (m *SessionsMethods) handleCompact(ctx context.Context, client *gateway.Cli
 		return
 	}
 
-	// Truncate history to last N messages
+	// Preferred path: LLM-summarize-then-truncate via the wired compactor.
+	if m.compactor != nil && !params.TruncateOnly {
+		original, kept, summarized, err := m.compactor(ctx, params.Key)
+		if err == nil {
+			client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
+				"ok":         true,
+				"original":   original,
+				"kept":       kept,
+				"summarized": summarized,
+			}))
+			emitAudit(m.eventBus, client, "session.compacted", "session", params.Key)
+			return
+		}
+		// Summarizer failed — fall through to truncate-only so the user still
+		// gets a usable session (a 500 here would leave them with full history).
+		slog.Warn("sessions.compact summarizer failed, falling back to truncate-only",
+			"session", params.Key, "error", err)
+	}
+
+	// Fallback: truncate without LLM call.
 	m.sessions.TruncateHistory(ctx, params.Key, keepLast)
 	m.sessions.IncrementCompaction(ctx, params.Key)
 	m.sessions.Save(ctx, params.Key)
 
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
-		"ok":       true,
-		"original": originalLen,
-		"kept":     keepLast,
+		"ok":         true,
+		"original":   originalLen,
+		"kept":       keepLast,
+		"summarized": false,
 	}))
 	emitAudit(m.eventBus, client, "session.compacted", "session", params.Key)
 }

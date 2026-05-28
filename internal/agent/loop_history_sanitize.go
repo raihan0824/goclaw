@@ -182,6 +182,14 @@ func sanitizeHistory(msgs []providers.Message) ([]providers.Message, int) {
 	return result, dropped
 }
 
+// CompactResult is the outcome of a session compaction.
+type CompactResult struct {
+	Original   int    // history length before compaction
+	Kept       int    // history length after compaction
+	Summarized bool   // true if the LLM-summary pass succeeded
+	Summary    string // the summary that was stored on the session
+}
+
 func (l *Loop) maybeSummarize(ctx context.Context, sessionKey string) {
 	history := l.sessions.GetHistory(ctx, sessionKey)
 
@@ -221,114 +229,146 @@ func (l *Loop) maybeSummarize(ctx context.Context, sessionKey string) {
 		l.runMemoryFlush(ctx, sessionKey, flushSettings)
 	}
 
-	// Resolve keepLast before spawning goroutine (reads config under caller's scope).
+	// Summarize in background — runCompaction releases the session mutex when done.
+	go func() {
+		defer sessionMu.Unlock()
+		defer safego.Recover(nil, "session", sessionKey)
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 120*time.Second)
+		defer cancel()
+		_, _ = l.runCompaction(sctx, sessionKey)
+	}()
+}
+
+// CompactSession synchronously summarizes the older portion of the session
+// history using the agent's LLM and truncates to the last `keepLast` messages.
+// Manual entrypoint exposed via the Agent interface — used by the sessions.compact
+// RPC and by the chat agent itself when the user explicitly asks for compaction.
+// Returns a CompactResult so callers can show "summarized N → K messages".
+// Acquires the per-session summarize mutex so it won't race with maybeSummarize.
+func (l *Loop) CompactSession(ctx context.Context, sessionKey string) (*CompactResult, error) {
+	if l == nil || l.sessions == nil {
+		return nil, fmt.Errorf("compact: loop not configured")
+	}
+	if sessionKey == "" {
+		return nil, fmt.Errorf("compact: sessionKey is required")
+	}
+	muI, _ := l.summarizeMu.LoadOrStore(sessionKey, &sync.Mutex{})
+	sessionMu := muI.(*sync.Mutex)
+	if !sessionMu.TryLock() {
+		return nil, fmt.Errorf("compact: already in progress for this session")
+	}
+	defer sessionMu.Unlock()
+
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 120*time.Second)
+	defer cancel()
+	return l.runCompaction(sctx, sessionKey)
+}
+
+// runCompaction performs the LLM-summarize-then-truncate body. Caller MUST
+// hold the per-session summarize mutex. Returns the resulting counts; never
+// panics (caller wraps with safego.Recover when invoked from a goroutine).
+func (l *Loop) runCompaction(ctx context.Context, sessionKey string) (*CompactResult, error) {
 	keepLast := 4
 	if l.compactionCfg != nil && l.compactionCfg.KeepLastMessages > 0 {
 		keepLast = l.compactionCfg.KeepLastMessages
 	}
 
-	// Summarize in background (holds the per-session lock until done)
-	go func() {
-		defer sessionMu.Unlock()
-		defer safego.Recover(nil, "session", sessionKey)
+	history := l.sessions.GetHistory(ctx, sessionKey)
+	originalLen := len(history)
+	if originalLen <= keepLast {
+		return &CompactResult{Original: originalLen, Kept: originalLen}, nil
+	}
 
-		// Re-check: history may have been truncated by a concurrent summarize
-		// that finished between our threshold check and acquiring the lock.
-		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 120*time.Second)
-		defer cancel()
+	summary := l.sessions.GetSummary(ctx, sessionKey)
+	toSummarize := history[:len(history)-keepLast]
 
-		history := l.sessions.GetHistory(sctx, sessionKey)
-		if len(history) <= keepLast {
-			return
+	var sb strings.Builder
+	var mediaKinds []string
+	for _, m := range toSummarize {
+		if m.Role == "user" {
+			sb.WriteString(fmt.Sprintf("user: %s\n", m.Content))
+		} else if m.Role == "assistant" {
+			sb.WriteString(fmt.Sprintf("assistant: %s\n", SanitizeAssistantContent(m.Content)))
 		}
+		for _, ref := range m.MediaRefs {
+			mediaKinds = append(mediaKinds, ref.Kind)
+		}
+	}
 
-		summary := l.sessions.GetSummary(sctx, sessionKey)
-		toSummarize := history[:len(history)-keepLast]
-
-		var sb strings.Builder
-		var mediaKinds []string
-		for _, m := range toSummarize {
-			if m.Role == "user" {
-				sb.WriteString(fmt.Sprintf("user: %s\n", m.Content))
-			} else if m.Role == "assistant" {
-				sb.WriteString(fmt.Sprintf("assistant: %s\n", SanitizeAssistantContent(m.Content)))
+	var prompt strings.Builder
+	prompt.WriteString(compactionSummaryPrompt)
+	if len(mediaKinds) > 0 {
+		counts := make(map[string]int)
+		for _, k := range mediaKinds {
+			counts[k]++
+		}
+		prompt.WriteString("Note: user shared media files (")
+		first := true
+		for k, n := range counts {
+			if !first {
+				prompt.WriteString(", ")
 			}
-			for _, ref := range m.MediaRefs {
-				mediaKinds = append(mediaKinds, ref.Kind)
-			}
+			prompt.WriteString(fmt.Sprintf("%d %s(s)", n, k))
+			first = false
 		}
+		prompt.WriteString(") which are no longer in context. Mention briefly if relevant.\n\n")
+	}
+	if summary != "" {
+		prompt.WriteString("Existing context: " + summary + "\n\n")
+	}
+	prompt.WriteString(sb.String())
 
-		var prompt strings.Builder
-		prompt.WriteString(compactionSummaryPrompt)
-		if len(mediaKinds) > 0 {
-			// Deduplicate and count media types for a compact note.
-			counts := make(map[string]int)
-			for _, k := range mediaKinds {
-				counts[k]++
-			}
-			prompt.WriteString("Note: user shared media files (")
-			first := true
-			for k, n := range counts {
-				if !first {
-					prompt.WriteString(", ")
-				}
-				prompt.WriteString(fmt.Sprintf("%d %s(s)", n, k))
-				first = false
-			}
-			prompt.WriteString(") which are no longer in context. Mention briefly if relevant.\n\n")
-		}
-		if summary != "" {
-			prompt.WriteString("Existing context: " + summary + "\n\n")
-		}
-		prompt.WriteString(sb.String())
+	inTokens := l.estimateSummaryInputTokens(toSummarize)
+	slog.Info("compact_budget", "agent", l.id, "in_tokens", inTokens, "out_tokens", dynamicSummaryMax(inTokens))
+	resp, err := l.provider.Chat(ctx, providers.ChatRequest{
+		Messages: []providers.Message{{Role: "user", Content: prompt.String()}},
+		Model:    l.model,
+		Options:  map[string]any{"max_tokens": dynamicSummaryMax(inTokens), "temperature": 0.3},
+	})
+	if err != nil {
+		slog.Warn("summarization failed", "session", sessionKey, "error", err)
+		return nil, fmt.Errorf("summarize: %w", err)
+	}
 
-		inTokens := l.estimateSummaryInputTokens(toSummarize)
-		slog.Info("compact_budget", "agent", l.id, "in_tokens", inTokens, "out_tokens", dynamicSummaryMax(inTokens))
-		resp, err := l.provider.Chat(sctx, providers.ChatRequest{
-			Messages: []providers.Message{{Role: "user", Content: prompt.String()}},
-			Model:    l.model,
-			Options:  map[string]any{"max_tokens": dynamicSummaryMax(inTokens), "temperature": 0.3},
-		})
-		if err != nil {
-			slog.Warn("summarization failed", "session", sessionKey, "error", err)
-			return
-		}
-
-		// Collect MediaRefs from messages about to be truncated (keep up to 30 most recent).
-		const maxPreservedMediaRefs = 30
-		var preservedRefs []providers.MediaRef
-		for i := len(toSummarize) - 1; i >= 0 && len(preservedRefs) < maxPreservedMediaRefs; i-- {
-			for _, ref := range toSummarize[i].MediaRefs {
-				preservedRefs = append(preservedRefs, ref)
-				if len(preservedRefs) >= maxPreservedMediaRefs {
-					break
-				}
+	// Collect MediaRefs from messages about to be truncated (keep up to 30 most recent).
+	const maxPreservedMediaRefs = 30
+	var preservedRefs []providers.MediaRef
+	for i := len(toSummarize) - 1; i >= 0 && len(preservedRefs) < maxPreservedMediaRefs; i-- {
+		for _, ref := range toSummarize[i].MediaRefs {
+			preservedRefs = append(preservedRefs, ref)
+			if len(preservedRefs) >= maxPreservedMediaRefs {
+				break
 			}
 		}
+	}
 
-		l.sessions.SetSummary(sctx, sessionKey, SanitizeAssistantContent(resp.Content))
-		l.sessions.TruncateHistory(sctx, sessionKey, keepLast)
+	cleanSummary := SanitizeAssistantContent(resp.Content)
+	l.sessions.SetSummary(ctx, sessionKey, cleanSummary)
+	l.sessions.TruncateHistory(ctx, sessionKey, keepLast)
 
-		// Inject preserved MediaRefs into the first kept message so they survive truncation.
-		if len(preservedRefs) > 0 {
-			kept := l.sessions.GetHistory(sctx, sessionKey)
-			if len(kept) > 0 {
-				kept[0].MediaRefs = append(preservedRefs, kept[0].MediaRefs...)
-				// Cap total refs on this message at maxPreservedMediaRefs.
-				if len(kept[0].MediaRefs) > maxPreservedMediaRefs {
-					kept[0].MediaRefs = kept[0].MediaRefs[:maxPreservedMediaRefs]
-				}
-				l.sessions.SetHistory(sctx, sessionKey, kept)
+	// Inject preserved MediaRefs into the first kept message so they survive truncation.
+	if len(preservedRefs) > 0 {
+		kept := l.sessions.GetHistory(ctx, sessionKey)
+		if len(kept) > 0 {
+			kept[0].MediaRefs = append(preservedRefs, kept[0].MediaRefs...)
+			if len(kept[0].MediaRefs) > maxPreservedMediaRefs {
+				kept[0].MediaRefs = kept[0].MediaRefs[:maxPreservedMediaRefs]
 			}
+			l.sessions.SetHistory(ctx, sessionKey, kept)
 		}
-		l.sessions.IncrementCompaction(sctx, sessionKey)
-		// Mirror SessionMetaKeyLastCompactionAt from the v3 prune/compact path
-		// so the legacy v2 post-turn summarizer also surfaces compaction cadence.
-		l.sessions.SetSessionMetadata(sctx, sessionKey, map[string]string{
-			SessionMetaKeyLastCompactionAt: time.Now().UTC().Format(time.RFC3339),
-		})
-		l.sessions.Save(sctx, sessionKey)
-	}()
+	}
+	l.sessions.IncrementCompaction(ctx, sessionKey)
+	l.sessions.SetSessionMetadata(ctx, sessionKey, map[string]string{
+		SessionMetaKeyLastCompactionAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	l.sessions.Save(ctx, sessionKey)
+
+	return &CompactResult{
+		Original:   originalLen,
+		Kept:       keepLast,
+		Summarized: true,
+		Summary:    cleanSummary,
+	}, nil
 }
 
 // estimateOverhead derives the non-history token overhead (system prompt + tool definitions +

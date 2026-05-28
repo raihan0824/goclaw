@@ -93,16 +93,26 @@ export function useSessions(opts: UseSessionsOptions = {}) {
     async (key: string, keepLast = 4) => {
       if (!ws.isConnected) return;
       try {
-        const res = await ws.call<{ ok: boolean; original?: number; kept?: number; message?: string }>(
-          Methods.SESSIONS_COMPACT,
-          { key, keepLast },
-        );
+        const res = await ws.call<{
+          ok: boolean;
+          original?: number;
+          kept?: number;
+          summarized?: boolean;
+          message?: string;
+        }>(Methods.SESSIONS_COMPACT, { key, keepLast });
         await invalidate();
         if (res.message === "session too short to compact") {
           toast.success(i18next.t("sessions:toast.compactTooShort"));
+        } else if (res.summarized) {
+          toast.success(
+            i18next.t("sessions:toast.summarized", {
+              original: res.original ?? 0,
+              kept: res.kept ?? keepLast,
+            }),
+          );
         } else {
           toast.success(
-            i18next.t("sessions:toast.compacted", {
+            i18next.t("sessions:toast.truncated", {
               original: res.original ?? 0,
               kept: res.kept ?? keepLast,
             }),

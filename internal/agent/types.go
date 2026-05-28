@@ -20,4 +20,7 @@ type Agent interface {
 	Model() string
 	ProviderName() string
 	Provider() providers.Provider
+	// CompactSession LLM-summarizes the older portion of the session history
+	// and truncates to the configured keepLast. Returns counts + summary text.
+	CompactSession(ctx context.Context, sessionKey string) (*CompactResult, error)
 }
