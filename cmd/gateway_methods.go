@@ -22,7 +22,18 @@ func registerAllMethods(server *gateway.Server, agents *agent.Router, sessStore 
 	chatMethods.SetAudioManager(audioMgr) // Wire TTS auto-apply for WS responses
 	chatMethods.Register(router)
 	methods.NewAgentsMethods(agents, cfg, cfgPath, workspace, agentStore, contextFileInterceptor, msgBus).Register(router)
-	methods.NewSessionsMethods(sessStore, msgBus, cfg).Register(router)
+	sessionsMethods := methods.NewSessionsMethods(sessStore, msgBus, cfg)
+	// Wire the LLM compactor — sessions.compact now does Claude-Code-style
+	// summarize-then-truncate by default, falling back to plain truncate if
+	// the summarizer fails.
+	sessionsMethods.SetCompactor(func(ctx context.Context, sessionKey string) (int, int, bool, error) {
+		res, err := agents.CompactSession(ctx, sessionKey)
+		if err != nil || res == nil {
+			return 0, 0, false, err
+		}
+		return res.Original, res.Kept, res.Summarized, nil
+	})
+	sessionsMethods.Register(router)
 	configMethods := methods.NewConfigMethods(cfg, cfgPath, configSecretsStore, msgBus)
 	if sysConfigStore != nil {
 		configMethods.SetSystemConfigSync(func(ctx context.Context, c *config.Config) {

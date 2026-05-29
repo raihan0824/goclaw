@@ -1730,6 +1730,91 @@ func TestFinalizeStage_SanitizesContent(t *testing.T) {
 	}
 }
 
+func TestFinalizeStage_AutoCompactOnEmpty_TriggersWhenHistoryLong(t *testing.T) {
+	t.Parallel()
+	var calledKey string
+	var calledLen int
+	deps := &PipelineDeps{
+		AutoCompactOnEmpty: func(_ context.Context, key string, historyLen int) bool {
+			calledKey = key
+			calledLen = historyLen
+			return true
+		},
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Input.SessionKey = "agent:abc:whatsapp:direct:123"
+	// Empty content (LLM returned no text) — finalize must fall back.
+	state.Observe.FinalContent = ""
+	// Long history simulates a context-exhausted session.
+	long := make([]providers.Message, 30)
+	for i := range long {
+		long[i] = providers.Message{Role: "user", Content: "msg"}
+	}
+	state.Messages.SetHistory(long)
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calledKey != "agent:abc:whatsapp:direct:123" {
+		t.Errorf("AutoCompactOnEmpty key = %q, want session key", calledKey)
+	}
+	if calledLen < 30 {
+		t.Errorf("AutoCompactOnEmpty historyLen = %d, want >= 30", calledLen)
+	}
+	if state.Observe.FinalContent == "..." {
+		t.Errorf("FinalContent should not be \"...\" when compaction fires, got %q", state.Observe.FinalContent)
+	}
+	if !contains(state.Observe.FinalContent, "auto-compacted") {
+		t.Errorf("FinalContent should mention auto-compacted, got %q", state.Observe.FinalContent)
+	}
+}
+
+func TestFinalizeStage_AutoCompactOnEmpty_FallsBackWhenCallbackDeclines(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{
+		AutoCompactOnEmpty: func(_ context.Context, _ string, _ int) bool {
+			// Below threshold — declines.
+			return false
+		},
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Observe.FinalContent = ""
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "..." {
+		t.Errorf("FinalContent = %q, want \"...\" when callback returns false", state.Observe.FinalContent)
+	}
+}
+
+func TestFinalizeStage_AutoCompactOnEmpty_NoCallback_KeepsExistingFallback(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{} // AutoCompactOnEmpty nil
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Observe.FinalContent = ""
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "..." {
+		t.Errorf("FinalContent = %q, want \"...\" when callback is nil", state.Observe.FinalContent)
+	}
+}
+
+// contains is a tiny stand-in to avoid importing strings for one substring check.
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
 func TestFinalizeStage_DeduplicatesMediaByPath(t *testing.T) {
 	t.Parallel()
 	deps := &PipelineDeps{}

@@ -83,6 +83,31 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   call to run before HTTP wiring. The 9-vs-11 route discrepancy in
   `/health` was the smoking gun.
 
+### Session management
+
+- **Compact button in Sessions UI — now uses LLM summarization.** The
+  `sessions.compact` RPC now dispatches via `agent.Router.CompactSession`
+  to the per-agent `Loop.CompactSession` method, which runs the same
+  summarize-then-truncate flow Claude Code's `/compact` uses (preserve
+  active tasks, identifiers, decisions; save the summary on the session;
+  preserve up to 30 most recent MediaRefs on the first kept message).
+  Falls back to plain truncate if the summarizer call fails so users
+  always get a usable session. The response includes
+  `summarized: true|false` and the toast distinguishes "Summarized N → K
+  messages" vs "Truncated N → K messages (no summary)". `truncateOnly:
+  true` request param bypasses the LLM summarizer when the caller really
+  does want a plain truncate.
+- **Auto-compact on empty content.** Pipeline `FinalizeStage` now
+  detects the "LLM returned no text" scenario: when content is empty,
+  the session is not silent (NO_REPLY), and history is longer than 20
+  messages, the loop adapter truncates to the last 4 messages, bumps
+  `compaction_count`, and logs `pipeline.auto_compact_on_empty`. The
+  current turn still falls back to a user-facing
+  `"[auto-compacted: context was full, please retry]"` message
+  (instead of the silent `"..."`) so the user knows what happened.
+  Safety net for Kimi Coding-style sessions where reasoning_content is
+  produced but `content` stays empty after the context window saturates.
+
 ### WhatsApp group names
 
 - **Auto-fetch group names** via cached `whatsmeow.GetGroupInfo` (24h TTL,
@@ -105,9 +130,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v16` |
-| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v11` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v18` |
+| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v14` |
 
-Roll the backend pod to `v16` (web is unchanged at `v11`). No DB
+Roll the web pod to `v14` (backend is unchanged at `v18`). No DB
 migration outside what upstream
 v3.12.0 already brings.

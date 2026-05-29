@@ -96,7 +96,7 @@ func (s *stubEventPub) Broadcast(_ bus.Event)                    {}
 
 // ---- helpers ----
 
-func buildSessionMethods(t *testing.T, sess *stubSessionStore) *SessionsMethods {
+func buildSessionMethods(t *testing.T, sess store.SessionStore) *SessionsMethods {
 	t.Helper()
 	cfg := &config.Config{}
 	return NewSessionsMethods(sess, &stubEventPub{}, cfg)
@@ -230,7 +230,7 @@ func TestSessionsReset_AdminPath_CallsReset(t *testing.T) {
 	sess := newStubSessionStore()
 	sess.addSession("reset-key", "owner")
 	m := buildSessionMethods(t, sess)
-	m.cfg.Gateway.OwnerIDs = []string{"owner"}
+	
 	client := nullClient()
 
 	req := sessionReqFrame(t, protocol.MethodSessionsReset, map[string]any{"key": "reset-key"})
@@ -266,3 +266,130 @@ func TestSessionsPreview_AdminPath_NoKeyOwnershipCheck(t *testing.T) {
 	m.handlePreview(context.Background(), client, req)
 	// No panic = success
 }
+
+// ---- Tests: handleCompact ----
+
+// compactHistoryStubSessionStore extends stubSessionStore with controllable
+// history length so handleCompact's "session too short to compact" guard can
+// be exercised both ways. Also records truncate calls so we can tell which
+// path the handler took.
+type compactHistoryStubSessionStore struct {
+	*stubSessionStore
+	history          []providers.Message
+	truncateKeepLast int
+	truncateCalls    int
+	incrementCalls   int
+}
+
+func newCompactHistoryStub(n int) *compactHistoryStubSessionStore {
+	msgs := make([]providers.Message, n)
+	for i := range msgs {
+		msgs[i] = providers.Message{Role: "user", Content: "x"}
+	}
+	return &compactHistoryStubSessionStore{
+		stubSessionStore: newStubSessionStore(),
+		history:          msgs,
+	}
+}
+
+func (s *compactHistoryStubSessionStore) GetHistory(_ context.Context, _ string) []providers.Message {
+	return s.history
+}
+func (s *compactHistoryStubSessionStore) TruncateHistory(_ context.Context, _ string, keepLast int) {
+	s.truncateCalls++
+	s.truncateKeepLast = keepLast
+}
+func (s *compactHistoryStubSessionStore) IncrementCompaction(_ context.Context, _ string) {
+	s.incrementCalls++
+}
+
+func TestSessionsCompact_TooShort_ReturnsMessage(t *testing.T) {
+	sess := newCompactHistoryStub(3) // < 6 → too short to compact
+	sess.addSession("k", "")
+	m := buildSessionMethods(t, sess)
+	
+
+	req := sessionReqFrame(t, protocol.MethodSessionsCompact, map[string]any{"key": "k"})
+	m.handleCompact(context.Background(), nullClient(), req)
+
+	if sess.truncateCalls != 0 {
+		t.Errorf("too-short path must not call TruncateHistory, got %d calls", sess.truncateCalls)
+	}
+}
+
+func TestSessionsCompact_WithCompactor_UsesLLMPathSkipsTruncate(t *testing.T) {
+	sess := newCompactHistoryStub(20)
+	sess.addSession("k", "")
+	m := buildSessionMethods(t, sess)
+	
+
+	var compactorCalls int
+	m.SetCompactor(func(_ context.Context, _ string) (int, int, bool, error) {
+		compactorCalls++
+		return 20, 4, true, nil
+	})
+
+	req := sessionReqFrame(t, protocol.MethodSessionsCompact, map[string]any{"key": "k"})
+	m.handleCompact(context.Background(), nullClient(), req)
+
+	if compactorCalls != 1 {
+		t.Errorf("compactor must be called once, got %d", compactorCalls)
+	}
+	if sess.truncateCalls != 0 {
+		t.Errorf("LLM path must not also call TruncateHistory, got %d", sess.truncateCalls)
+	}
+}
+
+func TestSessionsCompact_TruncateOnlyParam_BypassesCompactor(t *testing.T) {
+	sess := newCompactHistoryStub(20)
+	sess.addSession("k", "")
+	m := buildSessionMethods(t, sess)
+	
+
+	var compactorCalls int
+	m.SetCompactor(func(_ context.Context, _ string) (int, int, bool, error) {
+		compactorCalls++
+		return 20, 4, true, nil
+	})
+
+	req := sessionReqFrame(t, protocol.MethodSessionsCompact, map[string]any{
+		"key":          "k",
+		"truncateOnly": true,
+	})
+	m.handleCompact(context.Background(), nullClient(), req)
+
+	if compactorCalls != 0 {
+		t.Errorf("truncateOnly=true must skip compactor, got %d calls", compactorCalls)
+	}
+	if sess.truncateCalls != 1 {
+		t.Errorf("truncateOnly=true must call TruncateHistory exactly once, got %d", sess.truncateCalls)
+	}
+}
+
+func TestSessionsCompact_CompactorError_FallsBackToTruncate(t *testing.T) {
+	sess := newCompactHistoryStub(20)
+	sess.addSession("k", "")
+	m := buildSessionMethods(t, sess)
+	
+
+	m.SetCompactor(func(_ context.Context, _ string) (int, int, bool, error) {
+		return 0, 0, false, errCompactorFail
+	})
+
+	req := sessionReqFrame(t, protocol.MethodSessionsCompact, map[string]any{"key": "k"})
+	m.handleCompact(context.Background(), nullClient(), req)
+
+	if sess.truncateCalls != 1 {
+		t.Errorf("compactor failure must fall back to TruncateHistory once, got %d", sess.truncateCalls)
+	}
+	if sess.incrementCalls != 1 {
+		t.Errorf("fallback path must IncrementCompaction once, got %d", sess.incrementCalls)
+	}
+}
+
+var errCompactorFail = newCompactorTestErr("simulated summarization failure")
+
+type compactorTestErr string
+
+func newCompactorTestErr(s string) compactorTestErr { return compactorTestErr(s) }
+func (e compactorTestErr) Error() string            { return string(e) }

@@ -18,13 +18,19 @@
   },
   "detail": {
     "reset": "Reset",
+    "compact": "Compact",
     "delete": "Delete",
     "deleteTitle": "Delete Session",
     "deleteDescription": "This will permanently delete all messages in this session.",
     "resetTitle": "Reset Session",
     "resetDescription": "This will clear all messages but keep the session.",
+    "compactTitle": "Compact Session",
+    "compactDescription": "Summarize the older portion of the conversation with the agent's LLM, store the summary on the session, and truncate the history to the last 4 messages. Frees the context window while preserving what was discussed — same flow Claude Code's /compact uses. If summarization fails, falls back to a plain truncate (no summary).",
     "confirmDelete": "Delete",
     "confirmReset": "Reset",
+    "confirmCompact": "Compact",
+    "compacting": "Summarizing...",
+    "compactingHint": "The agent's LLM is summarizing the older messages. This can take 20-30 seconds — don't close this window.",
     "noMessages": "No messages in this session",
     "summary": "Summary",
     "showMore": "Show more",
@@ -39,7 +45,11 @@
     "deleteFailed": "Failed to delete session",
     "reset": "Session reset",
     "resetFailed": "Failed to reset session",
+    "summarized": "Summarized {{original}} → {{kept}} messages",
+    "truncated": "Truncated {{original}} → {{kept}} messages (no summary)",
+    "compactTooShort": "Session is too short to compact",
+    "compactFailed": "Failed to compact session",
     "updated": "Session updated",
-    "updateFailed": "Failed to update session"
+    "updateFailed": "Session update failed"
   }
 }

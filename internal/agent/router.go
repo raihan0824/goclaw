@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -494,4 +495,21 @@ func (r *Router) SessionRunID(sessionKey string) (string, bool) {
 		return "", false
 	}
 	return val.(string), true
+}
+
+// CompactSession dispatches an LLM-summarize-then-truncate compaction for a
+// session, parsing the agent key out of the session key and calling the
+// agent's CompactSession method. Wired into the sessions.compact RPC and
+// any other manual-compact entrypoint that has the session key but not the
+// agent loop.
+func (r *Router) CompactSession(ctx context.Context, sessionKey string) (*CompactResult, error) {
+	agentID, _ := sessions.ParseSessionKey(sessionKey)
+	if agentID == "" {
+		return nil, fmt.Errorf("compact: session key %q has no agent prefix", sessionKey)
+	}
+	ag, err := r.Get(ctx, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("compact: resolve agent %q: %w", agentID, err)
+	}
+	return ag.CompactSession(ctx, sessionKey)
 }

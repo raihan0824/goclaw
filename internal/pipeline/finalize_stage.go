@@ -43,8 +43,21 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 	isSilent := s.deps.IsSilentReply != nil && s.deps.IsSilentReply(state.Observe.FinalContent)
 
 	// 2b. Fallback for empty content (matching v2: channels need non-empty content to deliver).
+	// First give AutoCompactOnEmpty a chance to truncate a context-exhausted
+	// session so the next user turn can actually get a real reply. The
+	// current turn still falls back to "..." (or the configured placeholder)
+	// because we can't retroactively re-run inference here.
 	if state.Observe.FinalContent == "" && !isSilent {
-		state.Observe.FinalContent = "..."
+		if s.deps.AutoCompactOnEmpty != nil {
+			historyLen := state.Messages.TotalLen()
+			if s.deps.AutoCompactOnEmpty(ctx, state.Input.SessionKey, historyLen) {
+				state.Observe.FinalContent = "[auto-compacted: context was full, please retry]"
+			} else {
+				state.Observe.FinalContent = "..."
+			}
+		} else {
+			state.Observe.FinalContent = "..."
+		}
 	}
 
 	// 2c. Append content suffix (e.g. image markdown for WS) with dedup.

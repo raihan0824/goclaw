@@ -117,6 +117,15 @@ type PipelineDeps struct {
 	UpdateMetadata         func(ctx context.Context, sessionKey string, usage providers.Usage) error
 	BootstrapCleanup       func(ctx context.Context, state *RunState) error
 	MaybeSummarize         func(ctx context.Context, sessionKey string)
+
+	// AutoCompactOnEmpty is invoked from FinalizeStage when the LLM returned
+	// empty content AND the session history has more than `threshold` messages.
+	// Safety-net for context-exhausted sessions where the LLM stops producing
+	// text (e.g. Kimi Coding emitting only reasoning_content). The callback
+	// should truncate the session in the background and return whether a
+	// compaction happened, so the caller can adjust the user-facing fallback
+	// text (e.g. "compacted, please retry" instead of "..."). nil = disabled.
+	AutoCompactOnEmpty func(ctx context.Context, sessionKey string, historyLen int) bool
 }
 
 // FireHook is nil-safe. Returns FireResult{Decision: DecisionAllow} when no
