@@ -31,6 +31,13 @@ type BridgeTool struct {
 	timeoutSec     int
 	connected      *atomic.Bool
 	grantChecker   GrantChecker // for runtime grant recheck (nil = skip check)
+
+	// onConnectionDead is invoked when Execute observes an error that looks
+	// like the underlying transport is gone (timeout, EOF, broken pipe,
+	// connection reset). Wired by the manager/pool to ss.signalReconnect so
+	// the healthLoop can reconnect immediately instead of waiting for the
+	// 30s tick × 3 strikes. nil = legacy behavior (no error-driven invalidation).
+	onConnectionDead func()
 }
 
 // NewBridgeTool creates a BridgeTool from an MCP Tool definition.
@@ -69,6 +76,12 @@ func NewBridgeTool(serverName string, mcpTool mcpgo.Tool, clientPtr *atomic.Poin
 		grantChecker:   grantChecker,
 	}
 }
+
+// SetOnConnectionDead wires the dead-connection callback. Called by the
+// manager/pool with ss.signalReconnect after NewBridgeTool so the BridgeTool
+// can trigger an immediate reconnect when a tool call fails with a
+// connection-death error.
+func (t *BridgeTool) SetOnConnectionDead(fn func()) { t.onConnectionDead = fn }
 
 // ensureMCPPrefix guarantees the tool prefix starts with "mcp_".
 //   - Empty prefix → "mcp_{sanitizedServerName}"
@@ -138,6 +151,16 @@ func (t *BridgeTool) Execute(ctx context.Context, args map[string]any) *tools.Re
 
 	result, err := client.CallTool(callCtx, req)
 	if err != nil {
+		// Dead-connection errors (timeout on a healthy ctx, EOF, broken pipe,
+		// connection reset) mean the transport is gone — mark the connection
+		// dead and ask the healthLoop to reconnect immediately. This stops
+		// subsequent callers from each waiting another full timeoutSec.
+		if isConnectionDeadError(callCtx, err) {
+			t.connected.Store(false)
+			if t.onConnectionDead != nil {
+				t.onConnectionDead()
+			}
+		}
 		if errors.Is(callCtx.Err(), context.DeadlineExceeded) {
 			return tools.ErrorResult(fmt.Sprintf("MCP tool %q timeout after %ds", t.registeredName, t.timeoutSec))
 		}
@@ -305,4 +328,39 @@ func extractTextContent(result *mcpgo.CallToolResult) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+// isConnectionDeadError reports whether err looks like the underlying MCP
+// transport is gone rather than a legitimate slow/failed tool execution.
+// Currently catches: deadline-exceeded on the call ctx, EOF, broken pipe,
+// connection reset, and the stdio "process exited" / "no such file or
+// directory" classes. Conservative — false here is harmless (just no
+// error-driven invalidation; healthLoop will catch it on the 30s tick).
+func isConnectionDeadError(callCtx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	// callCtx.Err() == DeadlineExceeded means our CallTool wrapper timed out.
+	// On a healthy connection an MCP server normally returns a structured
+	// error before our timeout fires; hitting the wall-clock deadline is a
+	// strong signal the request was never even acknowledged.
+	if errors.Is(callCtx.Err(), context.DeadlineExceeded) {
+		return true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "eof"):
+	case strings.Contains(msg, "broken pipe"):
+	case strings.Contains(msg, "connection reset"):
+	case strings.Contains(msg, "connection refused"):
+	case strings.Contains(msg, "use of closed network connection"):
+	case strings.Contains(msg, "i/o timeout"):
+	case strings.Contains(msg, "process exited"): // stdio transport: server died
+	default:
+		return false
+	}
+	return true
 }

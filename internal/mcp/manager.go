@@ -70,10 +70,33 @@ type serverState struct {
 	cancel     context.CancelFunc
 	conn       connParams // connection params for reconnect
 
+	// reconnectSignal lets BridgeTools ask the healthLoop to reconnect
+	// immediately when a tool call fails with a connection-death error
+	// (timeout, EOF, broken pipe, connection reset). Without it, callers
+	// hit 60s CallTool timeouts repeatedly until the 30s/3-strike health
+	// check eventually catches up. Buffered 1 so the send is always
+	// non-blocking — multiple concurrent signals coalesce into one tick.
+	reconnectSignal chan struct{}
+
 	mu              sync.Mutex
 	reconnAttempts  int
 	healthFailures  int // consecutive ping failures (resets on success)
 	lastErr         string
+}
+
+// signalReconnect requests an immediate health-check + reconnect on the
+// serverState. Safe to call from any goroutine; coalesces multiple
+// concurrent requests into a single healthLoop iteration via the
+// buffered-1 channel pattern.
+func (ss *serverState) signalReconnect() {
+	if ss == nil || ss.reconnectSignal == nil {
+		return
+	}
+	select {
+	case ss.reconnectSignal <- struct{}{}:
+	default:
+		// Channel full — a reconnect is already queued. Nothing to do.
+	}
 }
 
 // Manager orchestrates MCP server connections and tool registration.

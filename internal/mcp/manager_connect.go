@@ -82,10 +82,11 @@ func connectAndDiscover(ctx context.Context, name, transportType, command string
 	}
 
 	ss := &serverState{
-		name:       name,
-		transport:  transportType,
-		client:     client,
-		timeoutSec: timeoutSec,
+		name:            name,
+		transport:       transportType,
+		client:          client,
+		timeoutSec:      timeoutSec,
+		reconnectSignal: make(chan struct{}, 1),
 		conn: connParams{
 			command: command,
 			args:    args,
@@ -144,6 +145,7 @@ func (m *Manager) registerBridgeTools(ss *serverState, mcpTools []mcpgo.Tool, se
 	var registeredNames []string
 	for _, mcpTool := range mcpTools {
 		bt := NewBridgeTool(serverName, mcpTool, &ss.clientPtr, toolPrefix, timeoutSec, &ss.connected, serverID, m.grantChecker)
+		bt.SetOnConnectionDead(ss.signalReconnect)
 
 		if _, exists := m.registry.Get(bt.Name()); exists {
 			slog.Warn("mcp.tool.name_collision",
@@ -212,6 +214,7 @@ func (m *Manager) registerPoolBridgeTools(entry *poolEntry, serverName, toolPref
 	var registeredNames []string
 	for _, mcpTool := range entry.tools {
 		bt := NewBridgeTool(serverName, mcpTool, &entry.state.clientPtr, toolPrefix, timeoutSec, &entry.state.connected, serverID, m.grantChecker)
+		bt.SetOnConnectionDead(entry.state.signalReconnect)
 
 		if _, exists := m.registry.Get(bt.Name()); exists {
 			slog.Warn("mcp.tool.name_collision",
@@ -267,6 +270,9 @@ func isMethodNotFound(err error) bool {
 }
 
 // healthLoop periodically pings the MCP server and attempts reconnection on failure.
+// Also listens on ss.reconnectSignal — when BridgeTools detect a dead connection
+// from a failed tool call, they signal here to skip the 30s/3-strike threshold
+// and reconnect immediately.
 func (m *Manager) healthLoop(ctx context.Context, ss *serverState) {
 	ticker := newHealthTicker()
 	defer ticker.Stop()
@@ -275,6 +281,13 @@ func (m *Manager) healthLoop(ctx context.Context, ss *serverState) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ss.reconnectSignal:
+			// Tool call failed with a dead-connection error. Skip the
+			// 3-strike tolerance — we already have concrete evidence the
+			// connection is broken from a real RPC, not just a ping miss.
+			slog.Info("mcp.server.reconnect_signal_received", "server", ss.name)
+			ss.connected.Store(false)
+			m.tryReconnect(ctx, ss)
 		case <-ticker.C:
 			if err := ss.client.Ping(ctx); err != nil {
 				if isMethodNotFound(err) {

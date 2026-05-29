@@ -44,6 +44,28 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   the LLM call and outbound. Cross-chat recall works because memory is
   keyed by `(agent_id, user_id)`.
 
+### MCP
+
+- **Error-driven reconnect for dead MCP connections.** Before this
+  patch, when an MCP server died (process crash, network drop, server
+  restart) every tool call hit the full 60s `CallTool` timeout for
+  30–90 seconds — until the health loop's 30s tick × 3-strike
+  threshold finally caught up and triggered a reconnect. Users had to
+  restart goclaw or hit "reconnect" in the UI to break the loop.
+  Now: `BridgeTool.Execute` classifies dead-connection errors
+  (`DeadlineExceeded` on the call ctx, EOF, broken pipe, connection
+  reset/refused, "use of closed network connection", "i/o timeout",
+  stdio "process exited"). When one fires it marks `connected=false`
+  so subsequent callers fast-fail with "MCP server disconnected"
+  instead of each waiting another 60s, and sends on a new
+  `reconnectSignal` channel that wakes the healthLoop to reconnect
+  immediately. The Manager and Pool variants both react to the signal,
+  skipping the 3-strike threshold (we have direct RPC evidence the
+  transport is gone). Log key: `mcp.server.reconnect_signal_received` /
+  `mcp.pool.reconnect_signal_received`. 6 new unit tests cover the
+  classifier, the BridgeTool callback wiring, and the non-blocking
+  coalescing send.
+
 ### Webhooks
 
 - **Full Lite parity.** Removed 4 edition gates so the Lite/SQLite build
@@ -130,9 +152,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v18` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v19` |
 | Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v14` |
 
-Roll the web pod to `v14` (backend is unchanged at `v18`). No DB
+Roll the backend pod to `v19` (web unchanged at `v14`). No DB
 migration outside what upstream
 v3.12.0 already brings.

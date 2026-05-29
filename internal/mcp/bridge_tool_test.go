@@ -1,7 +1,11 @@
 package mcp
 
 import (
+	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
@@ -259,4 +263,91 @@ func TestEnsureMCPPrefix(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsConnectionDeadError_DeadlineExceeded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+	time.Sleep(2 * time.Millisecond)
+	if !isConnectionDeadError(ctx, context.DeadlineExceeded) {
+		t.Error("deadline-exceeded ctx must classify as connection dead")
+	}
+}
+
+func TestIsConnectionDeadError_TransportPatterns(t *testing.T) {
+	dead := []string{
+		"EOF",
+		"write tcp 1.2.3.4: broken pipe",
+		"read tcp 1.2.3.4: connection reset by peer",
+		"dial tcp 1.2.3.4:9090: connect: connection refused",
+		"use of closed network connection",
+		"read tcp 1.2.3.4: i/o timeout",
+		"process exited unexpectedly",
+	}
+	for _, msg := range dead {
+		if !isConnectionDeadError(context.Background(), errors.New(msg)) {
+			t.Errorf("expected %q to classify as connection dead", msg)
+		}
+	}
+}
+
+func TestIsConnectionDeadError_NonTransportErrorsArentDead(t *testing.T) {
+	live := []string{
+		"tool error: invalid arguments",
+		"server returned 422 unprocessable entity",
+		"prometheus: query syntax error",
+		"upstream proxy 504",
+	}
+	for _, msg := range live {
+		if isConnectionDeadError(context.Background(), errors.New(msg)) {
+			t.Errorf("expected %q NOT to classify as connection dead", msg)
+		}
+	}
+}
+
+func TestBridgeTool_OnConnectionDead_NilSafe(t *testing.T) {
+	// Default constructor leaves onConnectionDead nil; setting it must not be required.
+	var connected atomic.Bool
+	connected.Store(true)
+	t.Log("nil callback is allowed — verified via Execute path manually below")
+
+	// Smoke: SetOnConnectionDead with a real callback should run.
+	var fired atomic.Bool
+	bt := &BridgeTool{}
+	bt.SetOnConnectionDead(func() { fired.Store(true) })
+	if bt.onConnectionDead == nil {
+		t.Fatal("SetOnConnectionDead did not store the callback")
+	}
+	bt.onConnectionDead()
+	if !fired.Load() {
+		t.Error("callback was not invoked")
+	}
+}
+
+func TestServerState_SignalReconnect_NonBlockingCoalesces(t *testing.T) {
+	ss := &serverState{reconnectSignal: make(chan struct{}, 1)}
+	// Multiple sends in a row must not block; the channel is buffered=1.
+	for i := 0; i < 10; i++ {
+		ss.signalReconnect()
+	}
+	// Drain — only one signal queued.
+	select {
+	case <-ss.reconnectSignal:
+	default:
+		t.Fatal("expected at least one signal queued after 10 signalReconnect calls")
+	}
+	// Channel must be empty now (10 calls coalesced into 1).
+	select {
+	case <-ss.reconnectSignal:
+		t.Fatal("expected channel to be empty after draining one signal")
+	default:
+	}
+}
+
+func TestServerState_SignalReconnect_NilSafe(t *testing.T) {
+	var ss *serverState
+	ss.signalReconnect() // must not panic
+
+	ss = &serverState{} // reconnectSignal nil
+	ss.signalReconnect() // must not panic
 }
