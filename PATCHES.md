@@ -131,8 +131,8 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 | Image | Tag |
 |---|---|
 | Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v18` |
-| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v13` |
+| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v14` |
 
-Roll the backend pod to `v18` and (if you use the standalone web
-container) the web pod to `v13`. No DB migration outside what upstream
+Roll the web pod to `v14` (backend is unchanged at `v18`). No DB
+migration outside what upstream
 v3.12.0 already brings.

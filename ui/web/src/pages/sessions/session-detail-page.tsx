@@ -60,6 +60,7 @@ export function SessionDetailPage({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmCompact, setConfirmCompact] = useState(false);
+  const [compacting, setCompacting] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
 
@@ -210,7 +211,13 @@ export function SessionDetailPage({
         </div>
         <div className="flex gap-2">
           {onCompact && (
-            <Button variant="outline" size="sm" onClick={() => setConfirmCompact(true)} className="gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmCompact(true)}
+              disabled={compacting}
+              className="gap-1"
+            >
               <Scissors className="h-3.5 w-3.5" /> {t("detail.compact")}
             </Button>
           )}
@@ -284,11 +291,19 @@ export function SessionDetailPage({
           title={t("detail.compactTitle")}
           description={t("detail.compactDescription")}
           confirmLabel={t("detail.confirmCompact")}
+          loading={compacting}
+          loadingLabel={t("detail.compacting")}
+          loadingHint={t("detail.compactingHint")}
           onConfirm={async () => {
-            await onCompact(session.key);
-            setConfirmCompact(false);
-            // Reload messages so the panel reflects the truncated history.
-            loadMessages();
+            setCompacting(true);
+            try {
+              await onCompact(session.key);
+              setConfirmCompact(false);
+              // Reload messages so the panel reflects the truncated history.
+              loadMessages();
+            } finally {
+              setCompacting(false);
+            }
           }}
         />
       )}

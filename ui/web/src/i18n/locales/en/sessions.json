@@ -29,6 +29,8 @@
     "confirmDelete": "Delete",
     "confirmReset": "Reset",
     "confirmCompact": "Compact",
+    "compacting": "Summarizing...",
+    "compactingHint": "The agent's LLM is summarizing the older messages. This can take 20-30 seconds — don't close this window.",
     "noMessages": "No messages in this session",
     "summary": "Summary",
     "showMore": "Show more",

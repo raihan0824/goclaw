@@ -29,6 +29,8 @@
     "confirmDelete": "删除",
     "confirmReset": "重置",
     "confirmCompact": "压缩",
+    "compacting": "总结中...",
+    "compactingHint": "Agent 的 LLM 正在总结较早的消息。可能需要 20-30 秒 — 请不要关闭此窗口。",
     "noMessages": "此Session中没有消息",
     "summary": "摘要",
     "showMore": "显示更多",

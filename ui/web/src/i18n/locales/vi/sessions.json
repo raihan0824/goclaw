@@ -29,6 +29,8 @@
     "confirmDelete": "Xóa",
     "confirmReset": "Đặt lại",
     "confirmCompact": "Nén",
+    "compacting": "Đang tóm tắt...",
+    "compactingHint": "LLM của agent đang tóm tắt các tin nhắn cũ. Có thể mất 20-30 giây — đừng đóng cửa sổ này.",
     "noMessages": "Không có tin nhắn trong session này",
     "summary": "Tóm tắt",
     "showMore": "Xem thêm",
