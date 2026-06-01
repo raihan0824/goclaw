@@ -46,6 +46,19 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 ### MCP
 
+- **MCP timeout deadlock fix.** Previously every `client.Ping(ctx)` and
+  the `Start` + `Initialize` calls in `fullReconnect` ran with the
+  long-lived healthLoop ctx (no deadline). When a server died and the
+  underlying TCP transport stopped responding, those calls blocked
+  forever — the healthLoop goroutine was stuck mid-Ping, the
+  reconnect-signal channel piled unread, and the bridge-tool fast-fail
+  fix (below) couldn't trigger an actual reconnect. Result: the user
+  had to restart goclaw or click "reconnect" in the UI even after the
+  v19 patch landed. Fix: introduced `pingTimeout=10s` +
+  `reconnectInitTimeout=30s`, wrapped every Ping (healthLoop ×2,
+  reconnect fast-path) and the Start + Initialize calls in
+  `fullReconnect` with their own derived ctx, so neither path can
+  deadlock anymore.
 - **Error-driven reconnect for dead MCP connections.** Before this
   patch, when an MCP server died (process crash, network drop, server
   restart) every tool call hit the full 60s `CallTool` timeout for
@@ -152,9 +165,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v19` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v20` |
 | Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v14` |
 
-Roll the backend pod to `v19` (web unchanged at `v14`). No DB
+Roll the backend pod to `v20` (web unchanged at `v14`). No DB
 migration outside what upstream
 v3.12.0 already brings.

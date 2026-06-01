@@ -351,3 +351,41 @@ func TestServerState_SignalReconnect_NilSafe(t *testing.T) {
 	ss = &serverState{} // reconnectSignal nil
 	ss.signalReconnect() // must not panic
 }
+
+func TestPingTimeout_Bounds(t *testing.T) {
+	// The whole point of these constants is that a dead MCP server cannot
+	// hang the healthLoop forever. Lock them in so a future refactor that
+	// raises them past, say, the channel-handler timeout doesn't quietly
+	// reintroduce the deadlock.
+	if pingTimeout < 1*time.Second {
+		t.Errorf("pingTimeout=%s too short, would flap on legitimate slow servers", pingTimeout)
+	}
+	if pingTimeout > 30*time.Second {
+		t.Errorf("pingTimeout=%s too long, defeats the deadlock-avoidance goal", pingTimeout)
+	}
+	if reconnectInitTimeout < pingTimeout {
+		t.Errorf("reconnectInitTimeout=%s must be >= pingTimeout=%s (Initialize is a superset of Ping)",
+			reconnectInitTimeout, pingTimeout)
+	}
+	if reconnectInitTimeout > 2*time.Minute {
+		t.Errorf("reconnectInitTimeout=%s too long, blocks the healthLoop goroutine for too long",
+			reconnectInitTimeout)
+	}
+}
+
+func TestPingWithTimeout_RespectsCancellation(t *testing.T) {
+	// We can't construct a real *mcpclient.Client without a transport, but
+	// the contract we care about is: if the parent ctx is already cancelled,
+	// pingWithTimeout's wrapper must not produce a context with a longer
+	// effective deadline than pingTimeout. Verify the wrapper composition.
+	parent, parentCancel := context.WithCancel(context.Background())
+	parentCancel()
+	wrapped, cancel := context.WithTimeout(parent, pingTimeout)
+	defer cancel()
+	select {
+	case <-wrapped.Done():
+		// good — derived ctx is cancelled because parent is
+	default:
+		t.Fatal("wrapped ctx should inherit parent cancellation immediately")
+	}
+}

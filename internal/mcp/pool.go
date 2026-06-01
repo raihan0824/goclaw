@@ -617,7 +617,7 @@ func poolHealthLoop(ctx context.Context, ss *serverState) {
 			ss.connected.Store(false)
 			poolTryReconnect(ctx, ss)
 		case <-ticker.C:
-			if err := ss.client.Ping(ctx); err != nil {
+			if err := pingWithTimeout(ctx, ss.client); err != nil {
 				if isMethodNotFound(err) {
 					ss.connected.Store(true)
 					ss.mu.Lock()

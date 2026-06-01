@@ -24,6 +24,15 @@ const (
 	maxBackoff           = 60 * time.Second
 	maxReconnectAttempts = 10
 	reconnectCooldown    = 5 * time.Minute // wait after exhausting reconnect attempts before retrying
+	// pingTimeout caps every health-check / reconnect ping. Without this the
+	// healthLoop can deadlock: a dead server's TCP connection blocks the HTTP
+	// request indefinitely (no ctx deadline), the goroutine never returns to
+	// the select, and reconnect signals on ss.reconnectSignal pile up in the
+	// buffer unread. See PATCHES.md "MCP timeout deadlock" entry.
+	pingTimeout = 10 * time.Second
+	// reconnectInitTimeout caps Start + Initialize during fullReconnect.
+	// Initialize against a dead server hangs the same way Ping does.
+	reconnectInitTimeout = 30 * time.Second
 
 	// mcpToolInlineMaxCount is the threshold above which MCP tools switch
 	// to search mode (deferred loading via mcp_tool_search) instead of
