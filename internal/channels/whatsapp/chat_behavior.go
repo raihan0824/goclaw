@@ -118,3 +118,16 @@ func (c *Channel) requireMentionFor(chatID string) bool {
 	}
 	return c.config.RequireMention != nil && *c.config.RequireMention
 }
+
+// agentForChat returns the agent_key that should handle messages from chatID.
+// If GroupAgentOverrides has a non-empty entry for the chat, that wins;
+// otherwise the channel-bound default agent is used. Lets one WhatsApp number
+// serve multiple agents segmented by group — the consumer pipeline already
+// honours InboundMessage.AgentID per-message, so each agent gets isolated
+// session history (session key includes the agent ID).
+func (c *Channel) agentForChat(chatID string) string {
+	if override, ok := c.config.GroupAgentOverrides[chatID]; ok && override != "" {
+		return override
+	}
+	return c.AgentID()
+}

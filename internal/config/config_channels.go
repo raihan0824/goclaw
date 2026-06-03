@@ -153,6 +153,15 @@ type WhatsAppConfig struct {
 	// Keyed by group JID (e.g. "120363111...@g.us") → display name. Wins over
 	// any name fetched from whatsmeow.
 	GroupAliases map[string]string `json:"group_aliases,omitempty"`
+
+	// GroupAgentOverrides: route specific group JIDs to a different agent
+	// than the channel-bound default. Keyed by group JID (e.g.
+	// "120363111...@g.us") → agent_key. Empty value = no override (use
+	// channel default). Lets one WhatsApp number serve multiple agents,
+	// segmented by group. The consumer pipeline already honours
+	// InboundMessage.AgentID per-message, so each agent gets its own
+	// session per group automatically (session key includes agent_id).
+	GroupAgentOverrides map[string]string `json:"group_agent_overrides,omitempty"`
 }
 
 type ZaloConfig struct {

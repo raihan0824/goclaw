@@ -14,6 +14,7 @@ import {
 import { ToolNameSelect } from "@/components/shared/tool-name-select";
 import { SkillNameSelect } from "@/components/shared/skill-name-select";
 import { WhatsappGroupAliasesField } from "./whatsapp-group-aliases-field";
+import { WhatsappGroupAgentOverridesField } from "./whatsapp-group-agent-overrides-field";
 import type { FieldDef } from "./channel-schemas";
 
 const INHERIT = "__inherit__";
@@ -296,6 +297,16 @@ function FieldRenderer({
     case "whatsappGroupAliases":
       return (
         <WhatsappGroupAliasesField
+          value={value as Record<string, string> | undefined}
+          onChange={onChange}
+          label={label}
+          help={help}
+        />
+      );
+
+    case "whatsappGroupAgentOverrides":
+      return (
+        <WhatsappGroupAgentOverridesField
           value={value as Record<string, string> | undefined}
           onChange={onChange}
           label={label}

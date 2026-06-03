@@ -7,6 +7,7 @@ package whatsapp
 import (
 	"testing"
 
+	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 )
 
@@ -95,5 +96,70 @@ func TestRequireMentionFor_PriorityMentionRequiredWins(t *testing.T) {
 	})
 	if !ch.requireMentionFor("both@g.us") {
 		t.Error("MentionRequiredChats should win when a chat is in both lists")
+	}
+}
+
+// --- agentForChat ---
+
+// newChannelWithAgent builds a Channel for agent-resolution tests. The
+// channel-bound default agent_id is set on the embedded BaseChannel via
+// SetAgentID so AgentID() returns it (matching production wiring).
+func newChannelWithAgent(defaultAgent string, cfg config.WhatsAppConfig) *Channel {
+	ch := &Channel{
+		BaseChannel: channels.NewBaseChannel("test-wa", nil, nil),
+		config:      cfg,
+	}
+	ch.SetAgentID(defaultAgent)
+	return ch
+}
+
+func TestAgentForChat_NoOverride_ReturnsDefault(t *testing.T) {
+	ch := newChannelWithAgent("default-agent", config.WhatsAppConfig{})
+	if got := ch.agentForChat("any@g.us"); got != "default-agent" {
+		t.Errorf("no override: got %q, want default-agent", got)
+	}
+}
+
+func TestAgentForChat_OverrideHit_ReturnsCustomAgent(t *testing.T) {
+	ch := newChannelWithAgent("default-agent", config.WhatsAppConfig{
+		GroupAgentOverrides: map[string]string{
+			"ops@g.us":   "ops-agent",
+			"sales@g.us": "sales-agent",
+		},
+	})
+	cases := map[string]string{
+		"ops@g.us":     "ops-agent",
+		"sales@g.us":   "sales-agent",
+		"other@g.us":   "default-agent", // miss → fall back
+		"5551234@s.whatsapp.net": "default-agent", // DM → fall back
+	}
+	for chat, want := range cases {
+		if got := ch.agentForChat(chat); got != want {
+			t.Errorf("agentForChat(%q) = %q, want %q", chat, got, want)
+		}
+	}
+}
+
+func TestAgentForChat_EmptyOverride_IsIgnored(t *testing.T) {
+	// Empty string value in the map should be treated as "no override",
+	// not as "route to no agent". Guards against UI bugs that send blank
+	// values when the user clears a row but doesn't delete it.
+	ch := newChannelWithAgent("default-agent", config.WhatsAppConfig{
+		GroupAgentOverrides: map[string]string{
+			"empty@g.us": "",
+		},
+	})
+	if got := ch.agentForChat("empty@g.us"); got != "default-agent" {
+		t.Errorf("empty override: got %q, want default-agent fallback", got)
+	}
+}
+
+func TestAgentForChat_NilMap_IsSafe(t *testing.T) {
+	// Nil map (typical zero-value config) must not panic.
+	ch := newChannelWithAgent("default-agent", config.WhatsAppConfig{
+		GroupAgentOverrides: nil,
+	})
+	if got := ch.agentForChat("any@g.us"); got != "default-agent" {
+		t.Errorf("nil map: got %q, want default-agent", got)
 	}
 }

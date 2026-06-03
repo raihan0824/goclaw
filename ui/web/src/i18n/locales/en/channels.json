@@ -513,5 +513,11 @@
     "addRow": "Add group",
     "removeRow": "Remove",
     "duplicateJid": "Duplicate JID — only the last value will be saved"
+  },
+  "groupAgentOverrides": {
+    "jidPlaceholder": "Group JID (e.g. 120363...@g.us)",
+    "addRow": "Add group override",
+    "removeRow": "Remove",
+    "duplicateJid": "Duplicate JID — only the last override will be applied"
   }
 }

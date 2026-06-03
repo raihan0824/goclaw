@@ -238,7 +238,7 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 		Media:    mediaFiles,
 		PeerKind: peerKind,
 		UserID:   userID,
-		AgentID:  c.AgentID(),
+		AgentID:  c.agentForChat(chatID),
 		TenantID: c.TenantID(),
 		Observe:  observeOnly,
 		Metadata: metadata,
