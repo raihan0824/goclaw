@@ -45,10 +45,24 @@ type ExecTool struct {
 	approvalMgr      *ExecApprovalManager // nil = no approval needed
 	agentID          string               // for approval request context
 	secureCLIStore   store.SecureCLIStore // nil = no credentialed exec
+	// allowedPrefixes are extra path prefixes that working_dir may target
+	// even when restrict_to_workspace is true (e.g. skills directories,
+	// user-configured allowed paths). Same mechanism the read/write/list
+	// tools use via the PathAllowable interface. nil = strict default
+	// (workspace + team workspace only).
+	allowedPrefixes []string
 	// globalDenyGroups holds global shell deny-group toggles from config.tools.
 	// Per-agent overrides from context (store.WithShellDenyGroups) win per-key.
 	// Updated at startup and via TopicConfigChanged pub/sub for runtime reload.
 	globalDenyGroups map[string]bool
+}
+
+// AllowPaths adds extra path prefixes that exec's working_dir may target
+// even under restrict_to_workspace. Matches the PathAllowable interface
+// used by the filesystem tools so gateway_tools_wiring.go can type-assert
+// uniformly across tools.
+func (t *ExecTool) AllowPaths(prefixes ...string) {
+	t.allowedPrefixes = append(t.allowedPrefixes, prefixes...)
 }
 
 // SetGlobalShellDenyGroups replaces the global shell deny-group toggles. The
@@ -383,7 +397,10 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 			// stricter write-allowed prefixes (team root excluded) to block
 			// cross-chat cwd even for "read-only" commands like cat, since we
 			// cannot prove the shell command will not write.
-			allowed := allowedWriteWithTeamWorkspace(ctx, nil)
+			// t.allowedPrefixes carries skill directories (and any user-
+			// configured allowed paths) so cd-ing into a skill dir works the
+			// same way read_file/list_files already do.
+			allowed := allowedWriteWithTeamWorkspace(ctx, t.allowedPrefixes)
 			resolved, err := resolvePathWithAllowed(wd, wsBase, true, allowed)
 			if err != nil {
 				return ErrorResult(err.Error())
