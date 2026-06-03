@@ -135,6 +135,17 @@ func wireExtraTools(
 			pa.AllowPaths(userAllowPaths...)
 		}
 	}
+	// Exec needs the same allowed-paths so working_dir = a skills directory
+	// (or any user-configured allowed path) doesn't get rejected by the
+	// restrict_to_workspace check. Without this, agents can run a skill
+	// script via absolute path in the command but cannot cd into the skill
+	// dir for relative imports / package contexts.
+	if execTool, ok := toolsReg.Get("exec"); ok {
+		if pa, ok := execTool.(tools.PathAllowable); ok {
+			pa.AllowPaths(skillsAllowPaths...)
+			pa.AllowPaths(userAllowPaths...)
+		}
+	}
 
 	// Memory tools are PG-backed; always available.
 	hasMemory = true

@@ -44,6 +44,27 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   the LLM call and outbound. Cross-chat recall works because memory is
   keyed by `(agent_id, user_id)`.
 
+### Tools
+
+- **exec working_dir now honours skill directories.** Before this fix,
+  the shell tool's `working_dir` validator at
+  `internal/tools/shell.go:386` passed `nil` for the allowed prefixes,
+  even though the same skills directories had already been wired into
+  `read_file`, `list_files`, and `send_file` via `AllowPaths(...)`.
+  Result: an agent could run a skill script via absolute path in the
+  command (e.g.
+  `python /app/data/skills-store/openrouter-analytics/1/scripts/or_api.py`),
+  but supplying `working_dir: /app/data/skills-store/openrouter-analytics/1`
+  on the same call returned `access denied: path outside workspace`.
+  Fix: added `allowedPrefixes []string` field + `AllowPaths(...)` method
+  on `ExecTool` (mirrors `PathAllowable` interface used by the
+  filesystem tools), wired it in `gateway_tools_wiring.go` with the
+  same `skillsAllowPaths + userAllowPaths` the read/list/send tools
+  already receive, and threaded `t.allowedPrefixes` into the validator.
+  4 new tests cover: working_dir inside an AllowPaths-registered skill
+  dir is accepted; outside-everything is still denied; no-AllowPaths
+  preserves the strict default; multiple AllowPaths calls accumulate.
+
 ### WhatsApp per-group agent
 
 - **`group_agent_overrides` config on the WhatsApp channel.** Lets one
@@ -182,9 +203,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v21` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v22` |
 | Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v15` |
 
-Roll the backend pod to `v21` and (if you use the standalone web
-container) the web pod to `v15`. No DB migration outside what upstream
+Roll the backend pod to `v22` (web unchanged at `v15`). No DB
+migration outside what upstream
 v3.12.0 already brings.
