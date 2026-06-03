@@ -24,6 +24,7 @@ const ESSENTIAL_CONFIG_KEYS: Record<string, string[]> = {
     "dm_policy", "group_policy", "require_mention",
     "silent_chats", "mention_required_chats", "auto_respond_chats",
     "group_aliases",
+    "group_agent_overrides",
   ],
 };
 
@@ -66,9 +67,10 @@ export function ChannelGeneralTab({ instance, agents, onUpdate }: ChannelGeneral
       // entries, the spread below would keep the existing array on the server
       // and the user's "remove all" would silently fail to persist.
       //
-      //   tags                  cleared → []
-      //   whatsappGroupAliases  cleared → {}
-      //   anything else         cleared → null  (backend deserialisers tolerate it)
+      //   tags                          cleared → []
+      //   whatsappGroupAliases          cleared → {}
+      //   whatsappGroupAgentOverrides   cleared → {}
+      //   anything else                 cleared → null  (backend deserialisers tolerate it)
       const cleanPolicies: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(policyValues)) {
         const isCleared =
@@ -86,6 +88,7 @@ export function ChannelGeneralTab({ instance, agents, onUpdate }: ChannelGeneral
             cleanPolicies[k] = [];
             break;
           case "whatsappGroupAliases":
+          case "whatsappGroupAgentOverrides":
             cleanPolicies[k] = {};
             break;
           default:

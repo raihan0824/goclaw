@@ -428,5 +428,11 @@
     "addRow": "添加群组",
     "removeRow": "删除",
     "duplicateJid": "JID 重复 — 仅保留最后一个值"
+  },
+  "groupAgentOverrides": {
+    "jidPlaceholder": "群组 JID（如 120363...@g.us）",
+    "addRow": "添加群组覆盖",
+    "removeRow": "删除",
+    "duplicateJid": "JID 重复 — 仅最后一条覆盖生效"
   }
 }

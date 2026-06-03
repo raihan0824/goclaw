@@ -44,6 +44,23 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
   the LLM call and outbound. Cross-chat recall works because memory is
   keyed by `(agent_id, user_id)`.
 
+### WhatsApp per-group agent
+
+- **`group_agent_overrides` config on the WhatsApp channel.** Lets one
+  WhatsApp number serve multiple agents, segmented by group: keyed by
+  group JID → `agent_key`. Empty value means no override (use channel
+  default). The consumer pipeline already honours
+  `InboundMessage.AgentID` per-message and session keys include the
+  agent ID, so each agent gets isolated session history per group with
+  no other changes needed. Falls back cleanly: missing JID, empty
+  string, and nil map all route to the channel-bound default agent.
+- **UI editor** in the channel general tab — a row-based picker
+  (existing UserPickerCombobox for the JID + the existing
+  AgentSelector for the agent) wired into the schema via the new
+  `whatsappGroupAgentOverrides` field type. Clearing all rows persists
+  as `{}` so the server-side JSONB merge actually replaces the previous
+  value.
+
 ### MCP
 
 - **MCP timeout deadlock fix.** Previously every `client.Ping(ctx)` and
@@ -165,9 +182,9 @@ WhatsApp agent (`AIRA`) against Kubernetes and Moonshot Kimi Coding.
 
 | Image | Tag |
 |---|---|
-| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v20` |
-| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v14` |
+| Backend | `dekaregistry.cloudeka.id/cloudeka-system/goclaw:v3.12.0-patched.v21` |
+| Web UI | `dekaregistry.cloudeka.id/cloudeka-system/goclaw-web:v3.12.0-patched.v15` |
 
-Roll the backend pod to `v20` (web unchanged at `v14`). No DB
-migration outside what upstream
+Roll the backend pod to `v21` and (if you use the standalone web
+container) the web pod to `v15`. No DB migration outside what upstream
 v3.12.0 already brings.
