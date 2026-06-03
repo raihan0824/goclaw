@@ -601,6 +601,9 @@ func (e *poolEntry) MCPTools() []mcpgo.Tool { return e.tools }
 // poolHealthLoop is a standalone health loop for pool-managed connections.
 // After consecutive ping failures, it attempts a full reconnect by creating
 // a fresh client, mirroring the Manager.tryReconnect slow path.
+// Also listens on ss.reconnectSignal — BridgeTools that hit a dead-connection
+// error during a real RPC trigger an immediate reconnect via this channel,
+// bypassing the 30s tick + 3-strike threshold.
 func poolHealthLoop(ctx context.Context, ss *serverState) {
 	ticker := newHealthTicker()
 	defer ticker.Stop()
@@ -609,8 +612,12 @@ func poolHealthLoop(ctx context.Context, ss *serverState) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ss.reconnectSignal:
+			slog.Info("mcp.pool.reconnect_signal_received", "server", ss.name)
+			ss.connected.Store(false)
+			poolTryReconnect(ctx, ss)
 		case <-ticker.C:
-			if err := ss.client.Ping(ctx); err != nil {
+			if err := pingWithTimeout(ctx, ss.client); err != nil {
 				if isMethodNotFound(err) {
 					ss.connected.Store(true)
 					ss.mu.Lock()

@@ -82,10 +82,11 @@ func connectAndDiscover(ctx context.Context, name, transportType, command string
 	}
 
 	ss := &serverState{
-		name:       name,
-		transport:  transportType,
-		client:     client,
-		timeoutSec: timeoutSec,
+		name:            name,
+		transport:       transportType,
+		client:          client,
+		timeoutSec:      timeoutSec,
+		reconnectSignal: make(chan struct{}, 1),
 		conn: connParams{
 			command: command,
 			args:    args,
@@ -144,6 +145,7 @@ func (m *Manager) registerBridgeTools(ss *serverState, mcpTools []mcpgo.Tool, se
 	var registeredNames []string
 	for _, mcpTool := range mcpTools {
 		bt := NewBridgeTool(serverName, mcpTool, &ss.clientPtr, toolPrefix, timeoutSec, &ss.connected, serverID, m.grantChecker)
+		bt.SetOnConnectionDead(ss.signalReconnect)
 
 		if _, exists := m.registry.Get(bt.Name()); exists {
 			slog.Warn("mcp.tool.name_collision",
@@ -212,6 +214,7 @@ func (m *Manager) registerPoolBridgeTools(entry *poolEntry, serverName, toolPref
 	var registeredNames []string
 	for _, mcpTool := range entry.tools {
 		bt := NewBridgeTool(serverName, mcpTool, &entry.state.clientPtr, toolPrefix, timeoutSec, &entry.state.connected, serverID, m.grantChecker)
+		bt.SetOnConnectionDead(entry.state.signalReconnect)
 
 		if _, exists := m.registry.Get(bt.Name()); exists {
 			slog.Warn("mcp.tool.name_collision",
@@ -260,6 +263,17 @@ func newHealthTicker() *time.Ticker {
 	return time.NewTicker(healthCheckInterval)
 }
 
+// pingWithTimeout wraps client.Ping with a hard deadline so health checks
+// and reconnect attempts cannot hang forever when the underlying transport
+// is dead but never reports an error. The bare client.Ping(ctx) honours the
+// parent ctx, but healthLoop passes its long-lived ctx (no deadline) — without
+// this wrapper a dead server would lock the healthLoop goroutine indefinitely.
+func pingWithTimeout(parent context.Context, client *mcpclient.Client) error {
+	ctx, cancel := context.WithTimeout(parent, pingTimeout)
+	defer cancel()
+	return client.Ping(ctx)
+}
+
 // isMethodNotFound returns true if the error indicates the server
 // doesn't implement the "ping" method (still considered healthy).
 func isMethodNotFound(err error) bool {
@@ -267,6 +281,9 @@ func isMethodNotFound(err error) bool {
 }
 
 // healthLoop periodically pings the MCP server and attempts reconnection on failure.
+// Also listens on ss.reconnectSignal — when BridgeTools detect a dead connection
+// from a failed tool call, they signal here to skip the 30s/3-strike threshold
+// and reconnect immediately.
 func (m *Manager) healthLoop(ctx context.Context, ss *serverState) {
 	ticker := newHealthTicker()
 	defer ticker.Stop()
@@ -275,8 +292,15 @@ func (m *Manager) healthLoop(ctx context.Context, ss *serverState) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ss.reconnectSignal:
+			// Tool call failed with a dead-connection error. Skip the
+			// 3-strike tolerance — we already have concrete evidence the
+			// connection is broken from a real RPC, not just a ping miss.
+			slog.Info("mcp.server.reconnect_signal_received", "server", ss.name)
+			ss.connected.Store(false)
+			m.tryReconnect(ctx, ss)
 		case <-ticker.C:
-			if err := ss.client.Ping(ctx); err != nil {
+			if err := pingWithTimeout(ctx, ss.client); err != nil {
 				if isMethodNotFound(err) {
 					ss.connected.Store(true)
 					ss.mu.Lock()
@@ -352,8 +376,9 @@ func reconnectWithBackoff(ctx context.Context, ss *serverState, logPrefix string
 	}
 
 	// Fast path: ping existing client — works for transient network blips
-	// where the server-side session is still alive.
-	if err := ss.client.Ping(ctx); err == nil {
+	// where the server-side session is still alive. Timeout-wrapped because
+	// a dead transport would block here indefinitely otherwise.
+	if err := pingWithTimeout(ctx, ss.client); err == nil {
 		ss.connected.Store(true)
 		ss.mu.Lock()
 		ss.reconnAttempts = 0
@@ -389,8 +414,15 @@ func fullReconnect(ctx context.Context, ss *serverState) bool {
 		return false
 	}
 
+	// Hard-cap Start + Initialize. Without this a dead server can hang the
+	// reconnect path indefinitely (Start opens a long-lived transport, and
+	// Initialize is a full RPC round trip — both block the healthLoop
+	// goroutine while waiting for a response that never comes).
+	initCtx, cancelInit := context.WithTimeout(ctx, reconnectInitTimeout)
+	defer cancelInit()
+
 	if ss.transport != "stdio" {
-		if err := newClient.Start(ctx); err != nil {
+		if err := newClient.Start(initCtx); err != nil {
 			_ = newClient.Close()
 			slog.Warn("mcp.reconnect_start_failed", "server", ss.name, "error", err)
 			return false
@@ -401,7 +433,7 @@ func fullReconnect(ctx context.Context, ss *serverState) bool {
 	initReq.Params.ProtocolVersion = mcpgo.LATEST_PROTOCOL_VERSION
 	initReq.Params.ClientInfo = mcpgo.Implementation{Name: "goclaw", Version: "1.0.0"}
 
-	if _, err := newClient.Initialize(ctx, initReq); err != nil {
+	if _, err := newClient.Initialize(initCtx, initReq); err != nil {
 		_ = newClient.Close()
 		slog.Warn("mcp.reconnect_init_failed", "server", ss.name, "error", err)
 		return false

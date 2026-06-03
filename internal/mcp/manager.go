@@ -24,6 +24,15 @@ const (
 	maxBackoff           = 60 * time.Second
 	maxReconnectAttempts = 10
 	reconnectCooldown    = 5 * time.Minute // wait after exhausting reconnect attempts before retrying
+	// pingTimeout caps every health-check / reconnect ping. Without this the
+	// healthLoop can deadlock: a dead server's TCP connection blocks the HTTP
+	// request indefinitely (no ctx deadline), the goroutine never returns to
+	// the select, and reconnect signals on ss.reconnectSignal pile up in the
+	// buffer unread. See PATCHES.md "MCP timeout deadlock" entry.
+	pingTimeout = 10 * time.Second
+	// reconnectInitTimeout caps Start + Initialize during fullReconnect.
+	// Initialize against a dead server hangs the same way Ping does.
+	reconnectInitTimeout = 30 * time.Second
 
 	// mcpToolInlineMaxCount is the threshold above which MCP tools switch
 	// to search mode (deferred loading via mcp_tool_search) instead of
@@ -70,10 +79,33 @@ type serverState struct {
 	cancel     context.CancelFunc
 	conn       connParams // connection params for reconnect
 
+	// reconnectSignal lets BridgeTools ask the healthLoop to reconnect
+	// immediately when a tool call fails with a connection-death error
+	// (timeout, EOF, broken pipe, connection reset). Without it, callers
+	// hit 60s CallTool timeouts repeatedly until the 30s/3-strike health
+	// check eventually catches up. Buffered 1 so the send is always
+	// non-blocking — multiple concurrent signals coalesce into one tick.
+	reconnectSignal chan struct{}
+
 	mu              sync.Mutex
 	reconnAttempts  int
 	healthFailures  int // consecutive ping failures (resets on success)
 	lastErr         string
+}
+
+// signalReconnect requests an immediate health-check + reconnect on the
+// serverState. Safe to call from any goroutine; coalesces multiple
+// concurrent requests into a single healthLoop iteration via the
+// buffered-1 channel pattern.
+func (ss *serverState) signalReconnect() {
+	if ss == nil || ss.reconnectSignal == nil {
+		return
+	}
+	select {
+	case ss.reconnectSignal <- struct{}{}:
+	default:
+		// Channel full — a reconnect is already queued. Nothing to do.
+	}
 }
 
 // Manager orchestrates MCP server connections and tool registration.
